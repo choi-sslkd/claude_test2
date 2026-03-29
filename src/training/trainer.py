@@ -38,7 +38,6 @@ def train_injection_transformer() -> dict:
         class_weights=weights,
     )
 
-    # Final evaluation on test set
     test_df = load_split("injection", "test")
     probs = model.predict(test_df["text"].tolist())
     preds = (probs >= 0.5).astype(int)
@@ -64,7 +63,31 @@ def train_injection_classical() -> dict:
         val_labels=val_df["label"].tolist(),
     )
 
-    # Final evaluation on test set
+    test_df = load_split("injection", "test")
+    probs = model.predict(test_df["text"].tolist())
+    preds = (probs >= 0.5).astype(int)
+    test_metrics = compute_metrics(test_df["label"].tolist(), preds, probs)
+    print(f"  Test metrics: {test_metrics}")
+
+    return {"train_result": result, "test_metrics": test_metrics}
+
+
+def train_injection_knn() -> dict:
+    """Train KNN injection detector."""
+    from src.models.injection.knn import InjectionKNNModel
+
+    print("\n=== Training Injection KNN ===")
+    train_df = load_split("injection", "train")
+    val_df = load_split("injection", "val")
+
+    model = InjectionKNNModel(n_neighbors=15, metric="cosine")
+    result = model.train(
+        train_texts=train_df["text"].tolist(),
+        train_labels=train_df["label"].tolist(),
+        val_texts=val_df["text"].tolist(),
+        val_labels=val_df["label"].tolist(),
+    )
+
     test_df = load_split("injection", "test")
     probs = model.predict(test_df["text"].tolist())
     preds = (probs >= 0.5).astype(int)
@@ -82,7 +105,6 @@ def train_ambiguity_transformer() -> dict:
     train_df = load_split("ambiguity", "train")
     val_df = load_split("ambiguity", "val")
 
-    # Convert float labels to int for classification
     train_labels = [int(l) for l in train_df["label"].tolist()]
     val_labels = [int(l) for l in val_df["label"].tolist()]
 
@@ -121,6 +143,35 @@ def train_ambiguity_classical() -> dict:
     val_labels = [int(l) for l in val_df["label"].tolist()]
 
     model = AmbiguityClassicalModel()
+    result = model.train(
+        train_texts=train_df["text"].tolist(),
+        train_labels=train_labels,
+        val_texts=val_df["text"].tolist(),
+        val_labels=val_labels,
+    )
+
+    test_df = load_split("ambiguity", "test")
+    test_labels = [int(l) for l in test_df["label"].tolist()]
+    probs = model.predict(test_df["text"].tolist())
+    preds = (probs >= 0.5).astype(int)
+    test_metrics = compute_metrics(test_labels, preds, probs)
+    print(f"  Test metrics: {test_metrics}")
+
+    return {"train_result": result, "test_metrics": test_metrics}
+
+
+def train_ambiguity_knn() -> dict:
+    """Train KNN ambiguity detector."""
+    from src.models.ambiguity.knn import AmbiguityKNNModel
+
+    print("\n=== Training Ambiguity KNN ===")
+    train_df = load_split("ambiguity", "train")
+    val_df = load_split("ambiguity", "val")
+
+    train_labels = [int(l) for l in train_df["label"].tolist()]
+    val_labels = [int(l) for l in val_df["label"].tolist()]
+
+    model = AmbiguityKNNModel(n_neighbors=15, metric="cosine")
     result = model.train(
         train_texts=train_df["text"].tolist(),
         train_labels=train_labels,

@@ -11,8 +11,10 @@ import click
 
 from src.training.trainer import (
     train_ambiguity_classical,
+    train_ambiguity_knn,
     train_ambiguity_transformer,
     train_injection_classical,
+    train_injection_knn,
     train_injection_transformer,
 )
 
@@ -20,8 +22,10 @@ from src.training.trainer import (
 TRAIN_FUNCS = {
     ("injection", "transformer"): train_injection_transformer,
     ("injection", "classical"): train_injection_classical,
+    ("injection", "knn"): train_injection_knn,
     ("ambiguity", "transformer"): train_ambiguity_transformer,
     ("ambiguity", "classical"): train_ambiguity_classical,
+    ("ambiguity", "knn"): train_ambiguity_knn,
 }
 
 
@@ -36,14 +40,14 @@ TRAIN_FUNCS = {
 @click.option(
     "--model",
     "-m",
-    type=click.Choice(["transformer", "classical", "all"]),
+    type=click.Choice(["transformer", "classical", "knn", "all"]),
     required=True,
     help="Which model type to train",
 )
 def main(task: str, model: str):
     """Train models for prompt scoring."""
     tasks = ["injection", "ambiguity"] if task == "all" else [task]
-    models = ["transformer", "classical"] if model == "all" else [model]
+    models = ["transformer", "classical", "knn"] if model == "all" else [model]
 
     results = {}
     for t in tasks:
@@ -63,7 +67,6 @@ def main(task: str, model: str):
     summary_path = settings.models_dir / "training_results.json"
     settings.models_dir.mkdir(parents=True, exist_ok=True)
 
-    # Convert numpy types for JSON serialization
     def _convert(obj):
         import numpy as np
         if isinstance(obj, (np.integer,)):

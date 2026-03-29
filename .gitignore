@@ -1,7 +1,7 @@
 data/raw/
 data/processed/
 data/splits/
-models/
+/models/
 __pycache__/
 *.pyc
 *.pyo
