@@ -1,0 +1,148 @@
+"""Generate benign prompt samples for balanced training.
+
+The injection datasets lack typical user prompts as negative examples.
+This module provides a curated set of benign prompts to improve
+the model's ability to distinguish normal queries from attacks.
+"""
+
+BENIGN_PROMPTS = [
+    # General knowledge
+    "What is the capital of France?",
+    "How does photosynthesis work?",
+    "Explain the theory of relativity in simple terms",
+    "What are the main differences between Python and Java?",
+    "How do I cook pasta al dente?",
+    "What is machine learning?",
+    "Tell me about the history of the Roman Empire",
+    "How does a car engine work?",
+    "What are the benefits of regular exercise?",
+    "Explain how the internet works",
+    "What causes earthquakes?",
+    "How do vaccines work?",
+    "What is the meaning of democracy?",
+    "How do airplanes fly?",
+    "What is climate change and why does it matter?",
+    "Explain quantum computing for beginners",
+    "What are the stages of the water cycle?",
+    "How does GPS navigation work?",
+    "What is the difference between DNA and RNA?",
+    "How do solar panels generate electricity?",
+
+    # Coding help
+    "How do I create a REST API in Python?",
+    "What is the difference between a list and a tuple?",
+    "How do I sort a dictionary by value in Python?",
+    "Explain the concept of recursion with an example",
+    "What is a database index and when should I use one?",
+    "How do I handle exceptions in JavaScript?",
+    "What is the difference between SQL and NoSQL databases?",
+    "How do I set up a Docker container?",
+    "Explain the MVC design pattern",
+    "What is the difference between GET and POST requests?",
+    "How do I use async/await in Python?",
+    "What is a linked list and how does it work?",
+    "How do I write unit tests in Python?",
+    "Explain the concept of Big O notation",
+    "What is dependency injection and why use it?",
+    "How do I deploy an application to AWS?",
+    "What is a hash table and how does it work?",
+    "How do I connect to a PostgreSQL database?",
+    "What is the difference between threads and processes?",
+    "How do I implement authentication in a web app?",
+
+    # Writing and creative
+    "Help me write a professional email to my manager",
+    "Can you proofread this paragraph for grammar errors?",
+    "Write a short poem about autumn",
+    "Help me create an outline for a blog post about AI",
+    "What are some good ways to start a presentation?",
+    "Help me write a cover letter for a software developer position",
+    "Give me ideas for a birthday party theme",
+    "How do I write a good thesis statement?",
+    "Can you help me summarize this article?",
+    "What are some tips for public speaking?",
+
+    # Daily tasks
+    "What is the weather like today in Seoul?",
+    "Recommend some good books to read",
+    "What are some healthy breakfast ideas?",
+    "How do I remove a stain from a white shirt?",
+    "What are the best exercises for back pain?",
+    "How do I change a flat tire?",
+    "What should I pack for a week-long trip?",
+    "How do I organize my closet efficiently?",
+    "What are some good study techniques?",
+    "How do I improve my sleep quality?",
+
+    # Math and science
+    "What is the Pythagorean theorem?",
+    "How do I calculate compound interest?",
+    "What is the periodic table of elements?",
+    "Explain Newton's three laws of motion",
+    "How do I solve a quadratic equation?",
+    "What is the speed of light?",
+    "How does a microscope work?",
+    "What is entropy in thermodynamics?",
+    "Explain the concept of probability",
+    "What are prime numbers and how do I find them?",
+
+    # Business
+    "How do I create a business plan?",
+    "What is the difference between revenue and profit?",
+    "How do I calculate ROI?",
+    "What are the best marketing strategies for startups?",
+    "How do I negotiate a salary increase?",
+    "What is project management and what tools should I use?",
+    "How do I conduct a SWOT analysis?",
+    "What are the basics of accounting?",
+    "How do I write a good resume?",
+    "What is the difference between B2B and B2C?",
+
+    # Multilingual
+    "오늘 날씨 어때?",
+    "파이썬으로 웹 크롤러를 만들고 싶어",
+    "좋은 영어 공부 방법을 알려줘",
+    "서울에서 부산까지 KTX로 얼마나 걸려?",
+    "맛있는 김치찌개 레시피 알려줘",
+    "이력서 작성 팁 좀 알려줘",
+    "프로그래밍을 처음 시작하는데 뭘 배워야 해?",
+    "건강한 식단 추천해줘",
+    "인공지능이란 무엇인가?",
+    "효과적인 시간 관리 방법을 알려줘",
+
+    # Conversational
+    "Thank you for your help!",
+    "Can you explain that in more detail?",
+    "I don't understand, could you simplify?",
+    "That's very helpful, thanks!",
+    "Could you give me another example?",
+    "What do you recommend?",
+    "Is there a simpler way to do this?",
+    "Can you walk me through step by step?",
+    "That makes sense now, thank you",
+    "Let me think about that and get back to you",
+
+    # Analysis requests
+    "Compare the pros and cons of electric cars",
+    "What are the advantages of remote work?",
+    "Analyze the main causes of World War I",
+    "What are the risks and benefits of AI?",
+    "Compare iPhone and Android phones",
+    "What are the environmental impacts of fast fashion?",
+    "Analyze the trend of cryptocurrency adoption",
+    "What are the main challenges in healthcare today?",
+    "Compare different types of renewable energy",
+    "What factors affect house prices in urban areas?",
+
+    # Long-form benign queries
+    "I'm working on a school project about renewable energy sources and I need to understand the differences between solar, wind, and hydroelectric power. Can you help me?",
+    "My team is building a web application and we need to decide between React and Vue.js for the frontend. What are the key differences?",
+    "I'm preparing for a job interview at a tech company. What kind of questions should I expect and how should I prepare?",
+    "I want to learn data science but I'm not sure where to start. Can you give me a roadmap for beginners?",
+    "We're planning a family vacation to Japan for two weeks. What are the must-visit places and what should we know about the culture?",
+    "I need to give a 10-minute presentation about artificial intelligence to my class. Can you help me structure it?",
+    "I'm having trouble with my Python code. It keeps throwing a TypeError when I try to concatenate a string and an integer. How do I fix this?",
+    "Can you explain how blockchain technology works in simple terms that a non-technical person would understand?",
+    "I want to start a small online business selling handmade crafts. What are the legal and practical steps I need to take?",
+    "My laptop is running very slowly. What are some things I can do to improve its performance without buying new hardware?",
+]

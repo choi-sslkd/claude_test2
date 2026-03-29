@@ -38,15 +38,15 @@ def create_splits(
         df = _to_dataframe(samples)
         print(f"  [{task_name}] Total: {len(df)} samples")
 
-        # Create stratification key from source + label
-        df["_strat"] = df["source"] + "_" + df["label"].astype(str)
+        # Stratify by label only (source can have too few samples per group)
+        strat_col = df["label"].astype(str)
 
         # First split: train vs (val + test)
         val_test_ratio = settings.val_ratio + settings.test_ratio
         train_df, valtest_df = train_test_split(
             df,
             test_size=val_test_ratio,
-            stratify=df["_strat"],
+            stratify=strat_col,
             random_state=42,
         )
 
@@ -55,17 +55,17 @@ def create_splits(
         val_df, test_df = train_test_split(
             valtest_df,
             test_size=relative_test,
-            stratify=valtest_df["_strat"],
+            stratify=valtest_df["label"].astype(str),
             random_state=42,
         )
 
-        # Drop stratification column and save
+        # Save
         for split_name, split_df in [
             ("train", train_df),
             ("val", val_df),
             ("test", test_df),
         ]:
-            split_df = split_df.drop(columns=["_strat"]).reset_index(drop=True)
+            split_df = split_df.reset_index(drop=True)
             fpath = output_dir / f"{task_name}_{split_name}.parquet"
             split_df.to_parquet(fpath, index=False)
             saved[f"{task_name}_{split_name}"] = fpath

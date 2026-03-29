@@ -203,72 +203,58 @@ def normalize_raccoon_bench(raw_dir: Path | None = None) -> list[InjectionSample
         return samples
 
     # Process attack files as injection samples (label=1)
+    # Attacks are plain text files (no extension) in subdirectories
     attacks_dir = data_dir / "attacks"
     if attacks_dir.exists():
-        for json_file in attacks_dir.rglob("*.json"):
+        for attack_file in attacks_dir.rglob("*"):
+            if not attack_file.is_file():
+                continue
+            # Skip JSON files, process plain text prompt files
             try:
-                data = json.loads(json_file.read_text(encoding="utf-8"))
-                if isinstance(data, list):
-                    for item in data:
-                        text = item if isinstance(item, str) else item.get("prompt", item.get("attack", str(item)))
-                        if text and len(str(text).strip()) > 3:
-                            samples.append(InjectionSample(
-                                id=_uid("raccoon", idx),
-                                text=str(text).strip(),
-                                label=1,
-                                source="raccoon_bench",
-                                category="extraction_attack",
-                            ))
-                            idx += 1
-                elif isinstance(data, dict):
-                    for key, val in data.items():
-                        texts = val if isinstance(val, list) else [val]
-                        for t in texts:
-                            text = t if isinstance(t, str) else str(t)
-                            if len(text.strip()) > 3:
-                                samples.append(InjectionSample(
-                                    id=_uid("raccoon", idx),
-                                    text=text.strip(),
-                                    label=1,
-                                    source="raccoon_bench",
-                                    category="extraction_attack",
-                                ))
-                                idx += 1
-            except Exception as e:
-                print(f"  [raccoon_bench] Warning: {json_file}: {e}")
-
-    # Process defense prompts as benign (label=0)
-    defenses_dir = data_dir / "defenses"
-    if defenses_dir.exists():
-        for json_file in defenses_dir.rglob("*.json"):
-            try:
-                data = json.loads(json_file.read_text(encoding="utf-8"))
-                if isinstance(data, list):
-                    for item in data:
-                        text = item if isinstance(item, str) else item.get("prompt", str(item))
-                        if text and len(str(text).strip()) > 3:
-                            samples.append(InjectionSample(
-                                id=_uid("raccoon", idx),
-                                text=str(text).strip(),
-                                label=0,
-                                source="raccoon_bench",
-                                category="defense",
-                            ))
-                            idx += 1
-                elif isinstance(data, dict):
-                    for key, val in data.items():
-                        text = val if isinstance(val, str) else str(val)
-                        if len(text.strip()) > 3:
-                            samples.append(InjectionSample(
-                                id=_uid("raccoon", idx),
-                                text=text.strip(),
-                                label=0,
-                                source="raccoon_bench",
-                                category="defense",
-                            ))
-                            idx += 1
+                text = attack_file.read_text(encoding="utf-8").strip()
+                if text and len(text) > 3 and not text.startswith("{"):
+                    attack_type = attack_file.parent.name
+                    samples.append(InjectionSample(
+                        id=_uid("raccoon", idx),
+                        text=text,
+                        label=1,
+                        source="raccoon_bench",
+                        category=f"extraction_{attack_type}",
+                    ))
+                    idx += 1
             except Exception:
                 pass
+
+    # Process defense prompts as benign (label=0)
+    # Defense templates and reference prompts are JSON dicts
+    for json_file in data_dir.rglob("*.json"):
+        try:
+            data = json.loads(json_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                for key, val in data.items():
+                    if isinstance(val, str) and len(val.strip()) > 10:
+                        samples.append(InjectionSample(
+                            id=_uid("raccoon", idx),
+                            text=val.strip()[:1000],  # truncate very long prompts
+                            label=0,
+                            source="raccoon_bench",
+                            category="defense",
+                        ))
+                        idx += 1
+                    elif isinstance(val, dict):
+                        # reference file: nested dict with defense categories
+                        for subkey, subval in val.items():
+                            if isinstance(subval, str) and len(subval.strip()) > 10:
+                                samples.append(InjectionSample(
+                                    id=_uid("raccoon", idx),
+                                    text=subval.strip()[:1000],
+                                    label=0,
+                                    source="raccoon_bench",
+                                    category="defense",
+                                ))
+                                idx += 1
+        except Exception:
+            pass
 
     print(f"  [raccoon_bench] Normalized {len(samples)} samples")
     return samples
@@ -364,7 +350,11 @@ def normalize_clamber(raw_dir: Path | None = None) -> list[AmbiguitySample]:
         for line in jf.read_text(encoding="utf-8").strip().splitlines():
             if not line.strip():
                 continue
-            rec = json.loads(line)
+            parsed = json.loads(line)
+            # Handle double-encoded JSON (string inside JSON)
+            if isinstance(parsed, str):
+                parsed = json.loads(parsed)
+            rec = parsed
             question = rec.get("question", "")
             if not question:
                 continue
@@ -392,6 +382,23 @@ def normalize_clamber(raw_dir: Path | None = None) -> list[AmbiguitySample]:
 # Aggregate functions
 # ---------------------------------------------------------------------------
 
+def _add_benign_prompts() -> list[InjectionSample]:
+    """Add curated benign prompts for balanced training."""
+    from src.preprocessing.benign_samples import BENIGN_PROMPTS
+
+    samples = []
+    for idx, text in enumerate(BENIGN_PROMPTS):
+        samples.append(InjectionSample(
+            id=_uid("benign_curated", idx),
+            text=text,
+            label=0,
+            source="benign_curated",
+            category="normal_query",
+        ))
+    print(f"  [benign_curated] Added {len(samples)} benign samples")
+    return samples
+
+
 def normalize_all_injection() -> list[InjectionSample]:
     """Run all injection normalizers and combine."""
     print("Normalizing injection datasets...")
@@ -400,6 +407,7 @@ def normalize_all_injection() -> list[InjectionSample]:
     samples.extend(normalize_pint_benchmark())
     samples.extend(normalize_prompt_leakage())
     samples.extend(normalize_raccoon_bench())
+    samples.extend(_add_benign_prompts())
     print(f"Total injection samples: {len(samples)}")
     return samples
 
