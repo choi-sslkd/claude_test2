@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "prompt-guard-v2"
+version = "0.1.0"
+description = "ML/DL-based prompt injection detection and ambiguity scoring for rule engines"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "config*"]
