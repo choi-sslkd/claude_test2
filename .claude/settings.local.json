@@ -12,7 +12,8 @@
       "Bash(npx prisma:*)",
       "Bash(npx jest:*)",
       "Bash(DATABASE_URL=\"file:./dev.db\" npx prisma db push --schema prisma/schema.prisma)",
-      "Bash(python scripts/test_rule_engine.py)"
+      "Bash(python scripts/test_rule_engine.py)",
+      "Bash(npx vite:*)"
     ]
   }
 }

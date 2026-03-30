@@ -1,4 +1,4 @@
-// extension/content.js
+// extension/content.js — Dual score display (Injection + Ambiguity)
 
 const alertBox = document.createElement('div');
 alertBox.style.cssText = `
@@ -14,9 +14,10 @@ alertBox.style.cssText = `
   z-index: 2147483647;
   display: none;
   pointer-events: none;
-  max-width: 420px;
-  line-height: 1.5;
+  max-width: 480px;
+  line-height: 1.6;
   white-space: pre-wrap;
+  font-size: 13px;
 `;
 document.body.appendChild(alertBox);
 
@@ -29,15 +30,9 @@ function getPromptText(target) {
 
 function showAlert(message, type = 'danger') {
   alertBox.innerText = message;
-
-  if (type === 'danger') {
-    alertBox.style.backgroundColor = '#ff4d4f';
-  } else if (type === 'warning') {
-    alertBox.style.backgroundColor = '#faad14';
-  } else {
-    alertBox.style.backgroundColor = '#1677ff';
-  }
-
+  if (type === 'danger') alertBox.style.backgroundColor = '#ff4d4f';
+  else if (type === 'warning') alertBox.style.backgroundColor = '#faad14';
+  else alertBox.style.backgroundColor = '#1677ff';
   alertBox.style.display = 'block';
 }
 
@@ -56,7 +51,7 @@ function safeSendMessage(text, callback) {
     });
   } catch (error) {
     if (error?.message?.includes('Extension context invalidated')) {
-      showAlert('🔄 익스텐션 코드가 업데이트되었습니다. F5로 새로고침 해주세요.', 'warning');
+      showAlert('Extension updated. Please refresh the page (F5).', 'warning');
       return;
     }
     console.error('[Prompt Guard] 메시지 전송 실패:', error);
@@ -69,75 +64,61 @@ function findPromptBox() {
 
 function clearPromptBox(promptBox) {
   if (!promptBox) return;
-
   if ('value' in promptBox) {
     promptBox.value = '';
     promptBox.dispatchEvent(new Event('input', { bubbles: true }));
     return;
   }
-
   promptBox.innerHTML = '<p><br></p>';
   promptBox.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-function normalizeAnalysisResponse(response) {
-  if (!response) return null;
+function normalizeResponse(response) {
+  if (!response || response.status !== 'success') return null;
 
-  const riskLevel = typeof response.riskLevel === 'string'
-    ? response.riskLevel.toLowerCase()
-    : 'low';
-
-  const score = Number.isFinite(response.score) ? response.score : 0;
-
+  const overallRisk = (response.overallRisk || 'note').toLowerCase();
   const blocked = Boolean(response.blocked);
+  const injPct = response.injectionPct || 'N/A';
+  const ambPct = response.ambiguityPct || 'N/A';
+  const injSev = (response.injectionSeverity || 'note').toUpperCase();
+  const ambSev = (response.ambiguitySeverity || 'note').toUpperCase();
+  const matches = response.matches || [];
 
-  const message =
-    typeof response.message === 'string' && response.message.trim()
-      ? response.message.trim()
-      : '';
-
-  return {
-    riskLevel,
-    score,
-    blocked,
-    message,
-  };
+  return { overallRisk, blocked, injPct, ambPct, injSev, ambSev, matches };
 }
 
-function buildAlertMessage(result, isSubmitPhase = false) {
-  const { riskLevel, score, blocked, message } = result;
+function buildAlertMessage(r, isSubmit = false) {
+  const matchText = r.matches.length > 0
+    ? r.matches.map((m) => `"${m.pattern || m.id}"`).join(', ')
+    : '';
 
-  if (blocked || riskLevel === 'critical') {
-    return {
-      type: 'danger',
-      text:
-        `⛔ [차단됨 / ${riskLevel.toUpperCase()}]\n` +
-        `위험 점수: ${score}\n` +
-        `${message || '보안 정책 위반 가능성이 높아 전송이 차단되었습니다.'}`,
-    };
+  if (r.blocked || r.overallRisk === 'critical') {
+    let text = `[BLOCKED / ${r.overallRisk.toUpperCase()}]\n`;
+    text += `Injection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
+    if (matchText) text += `\nMatched: ${matchText}`;
+    return { type: 'danger', text };
   }
 
-  if (riskLevel === 'high') {
-    return {
-      type: isSubmitPhase ? 'danger' : 'warning',
-      text:
-        `🚨 [고위험]\n` +
-        `위험 점수: ${score}\n` +
-        `${message || '위험한 프롬프트 패턴이 감지되었습니다.'}`,
-    };
+  if (r.overallRisk === 'high') {
+    let text = `[HIGH RISK]\n`;
+    text += `Injection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
+    if (matchText) text += `\nMatched: ${matchText}`;
+    return { type: isSubmit ? 'danger' : 'warning', text };
   }
 
-  if (riskLevel === 'medium') {
-    return {
-      type: 'warning',
-      text:
-        `⚠️ [주의]\n` +
-        `위험 점수: ${score}\n` +
-        `${message || '의심스러운 프롬프트 패턴이 감지되었습니다.'}`,
-    };
+  if (r.overallRisk === 'medium') {
+    let text = `[MEDIUM]\n`;
+    text += `Injection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
+    if (matchText) text += `\nMatched: ${matchText}`;
+    return { type: 'warning', text };
   }
 
-  return null;
+  if (r.overallRisk === 'low') {
+    let text = `[LOW]\nInjection: ${r.injPct} | Ambiguity: ${r.ambPct}`;
+    return { type: 'info', text };
+  }
+
+  return null; // note level — no alert
 }
 
 let debounceTimer = null;
@@ -145,87 +126,54 @@ let debounceTimer = null;
 document.body.addEventListener('keyup', (e) => {
   const promptBox = findPromptBox();
   if (!promptBox) return;
-
   if (!(promptBox.contains(e.target) || e.target === promptBox)) return;
 
   const text = getPromptText(promptBox);
-
   clearTimeout(debounceTimer);
+
   debounceTimer = setTimeout(() => {
-    if (!text.trim()) {
-      hideAlert();
-      return;
-    }
+    if (!text.trim()) { hideAlert(); return; }
 
     safeSendMessage(text, (response) => {
-      if (!response || response.status !== 'success') {
-        return;
-      }
-
-      const result = normalizeAnalysisResponse(response);
-      if (!result) return;
-
-      const alertInfo = buildAlertMessage(result, false);
-
-      if (!alertInfo) {
-        hideAlert();
-        return;
-      }
-
-      showAlert(alertInfo.text, alertInfo.type);
+      const r = normalizeResponse(response);
+      if (!r) return;
+      const alert = buildAlertMessage(r, false);
+      if (!alert) { hideAlert(); return; }
+      showAlert(alert.text, alert.type);
     });
   }, 400);
 });
 
-document.body.addEventListener(
-  'keydown',
-  (e) => {
-    if (e.key !== 'Enter' || e.shiftKey) return;
+document.body.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.shiftKey) return;
 
-    const promptBox = findPromptBox();
-    if (!promptBox) return;
-    if (!(promptBox.contains(e.target) || e.target === promptBox)) return;
+  const promptBox = findPromptBox();
+  if (!promptBox) return;
+  if (!(promptBox.contains(e.target) || e.target === promptBox)) return;
 
-    const text = getPromptText(promptBox);
-    if (!text.trim()) return;
+  const text = getPromptText(promptBox);
+  if (!text.trim()) return;
 
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
 
-    safeSendMessage(text, (response) => {
-      if (!response || response.status !== 'success') {
-        showAlert('⚠️ 분석 응답을 받지 못했습니다.', 'warning');
-        return;
-      }
+  safeSendMessage(text, (response) => {
+    const r = normalizeResponse(response);
+    if (!r) {
+      showAlert('Analysis response unavailable', 'warning');
+      return;
+    }
 
-      const result = normalizeAnalysisResponse(response);
-      if (!result) {
-        showAlert('⚠️ 분석 결과 형식이 올바르지 않습니다.', 'warning');
-        return;
-      }
+    if (r.blocked || r.overallRisk === 'critical' || r.overallRisk === 'high') {
+      const alert = buildAlertMessage(r, true);
+      showAlert(alert.text, alert.type);
+      clearPromptBox(promptBox);
+      return;
+    }
 
-      if (result.blocked || result.riskLevel === 'critical') {
-        const alertInfo = buildAlertMessage(result, true);
-        showAlert(alertInfo.text, alertInfo.type);
-        clearPromptBox(promptBox);
-        return;
-      }
-
-      if (result.riskLevel === 'high') {
-        const alertInfo = buildAlertMessage(result, true);
-        showAlert(alertInfo.text, alertInfo.type);
-        clearPromptBox(promptBox);
-        return;
-      }
-
-      hideAlert();
-
-      const sendBtn = document.querySelector('button[data-testid="send-button"]');
-      if (sendBtn) {
-        sendBtn.click();
-      }
-    });
-  },
-  true,
-);
+    hideAlert();
+    const sendBtn = document.querySelector('button[data-testid="send-button"]');
+    if (sendBtn) sendBtn.click();
+  });
+}, true);

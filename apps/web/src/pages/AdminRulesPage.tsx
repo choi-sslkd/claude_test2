@@ -1,30 +1,60 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+type RiskLevel = 'NOTE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+type Category =
+  | 'PROMPT_INJECTION'
+  | 'SYSTEM_PROMPT_EXTRACTION'
+  | 'JAILBREAK'
+  | 'DATA_EXFILTRATION'
+  | 'AMBIGUOUS_REQUEST'
+  | 'POLICY_BYPASS'
+  | 'SENSITIVE_DATA'
+  | 'CUSTOM';
 
 type Rule = {
   id: string;
   pattern: string;
+  category: Category;
   riskLevel: RiskLevel;
   enabled: boolean;
+  injectionWeight?: number;
+  ambiguityWeight?: number;
+  owaspRisk?: string;
   createdAt: string;
   updatedAt: string;
 };
 
 type RuleForm = {
   pattern: string;
-  riskLevel: RiskLevel;
+  category: Category;
   enabled: boolean;
 };
 
 const API_BASE_URL = 'http://localhost:3000';
 
+const CATEGORIES: Category[] = [
+  'PROMPT_INJECTION',
+  'SYSTEM_PROMPT_EXTRACTION',
+  'JAILBREAK',
+  'DATA_EXFILTRATION',
+  'AMBIGUOUS_REQUEST',
+  'POLICY_BYPASS',
+  'SENSITIVE_DATA',
+  'CUSTOM',
+];
+
 const initialForm: RuleForm = {
   pattern: '',
-  riskLevel: 'MEDIUM',
+  category: 'PROMPT_INJECTION',
   enabled: true,
 };
+
+function formatWeight(value?: number): string {
+  if (value === undefined || value === null) return '-';
+  return value.toFixed(3);
+}
 
 export default function AdminRulesPage() {
   const navigate = useNavigate();
@@ -33,6 +63,7 @@ export default function AdminRulesPage() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [recalculatingId, setRecalculatingId] = useState<string | null>(null);
   const [error, setError] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
 
@@ -50,6 +81,7 @@ export default function AdminRulesPage() {
     return rules.filter((rule) => {
       return (
         rule.pattern.toLowerCase().includes(keyword) ||
+        rule.category.toLowerCase().includes(keyword) ||
         rule.riskLevel.toLowerCase().includes(keyword) ||
         String(rule.enabled).includes(keyword)
       );
@@ -122,7 +154,7 @@ export default function AdminRulesPage() {
         credentials: 'include',
         body: JSON.stringify({
           pattern: form.pattern.trim(),
-          riskLevel: form.riskLevel,
+          category: form.category,
           enabled: form.enabled,
         }),
       });
@@ -148,7 +180,7 @@ export default function AdminRulesPage() {
     setEditingId(rule.id);
     setEditForm({
       pattern: rule.pattern,
-      riskLevel: rule.riskLevel,
+      category: rule.category,
       enabled: rule.enabled,
     });
   }
@@ -177,7 +209,7 @@ export default function AdminRulesPage() {
         credentials: 'include',
         body: JSON.stringify({
           pattern: editForm.pattern.trim(),
-          riskLevel: editForm.riskLevel,
+          category: editForm.category,
           enabled: editForm.enabled,
         }),
       });
@@ -256,6 +288,32 @@ export default function AdminRulesPage() {
       setSuccessMessage('활성화 상태가 변경되었습니다.');
     } catch (err) {
       setError(err instanceof Error ? err.message : '상태 변경 중 오류가 발생했습니다.');
+    }
+  }
+
+  async function handleRecalculate(id: string) {
+    clearMessages();
+
+    try {
+      setRecalculatingId(id);
+
+      const response = await fetch(`${API_BASE_URL}/admin/rules/${id}/recalculate`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('위험도 재계산에 실패했습니다.');
+      }
+
+      const updatedRule: Rule = await response.json();
+
+      setRules((prev) => prev.map((rule) => (rule.id === id ? updatedRule : rule)));
+      setSuccessMessage('위험도가 재계산되었습니다.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '위험도 재계산 중 오류가 발생했습니다.');
+    } finally {
+      setRecalculatingId(null);
     }
   }
 
@@ -366,15 +424,17 @@ export default function AdminRulesPage() {
             </div>
 
             <div style={styles.formField}>
-              <label style={styles.label}>Risk Level</label>
+              <label style={styles.label}>Category</label>
               <select
-                value={form.riskLevel}
-                onChange={(e) => handleFormChange('riskLevel', e.target.value as RiskLevel)}
+                value={form.category}
+                onChange={(e) => handleFormChange('category', e.target.value as Category)}
                 style={styles.select}
               >
-                <option value="LOW">LOW</option>
-                <option value="MEDIUM">MEDIUM</option>
-                <option value="HIGH">HIGH</option>
+                {CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -403,7 +463,7 @@ export default function AdminRulesPage() {
             <h3 style={styles.cardTitle}>룰 목록</h3>
             <input
               type="text"
-              placeholder="pattern / 위험도 검색"
+              placeholder="pattern / 카테고리 / 위험도 검색"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={styles.searchInput}
@@ -420,7 +480,11 @@ export default function AdminRulesPage() {
                 <thead>
                   <tr>
                     <th style={styles.th}>Pattern</th>
+                    <th style={styles.th}>Category</th>
                     <th style={styles.th}>Risk</th>
+                    <th style={styles.th}>Inj.Weight</th>
+                    <th style={styles.th}>Amb.Weight</th>
+                    <th style={styles.th}>OWASP Risk</th>
                     <th style={styles.th}>Enabled</th>
                     <th style={styles.th}>Created</th>
                     <th style={styles.th}>Updated</th>
@@ -449,19 +513,37 @@ export default function AdminRulesPage() {
                         <td style={styles.td}>
                           {isEditing ? (
                             <select
-                              value={editForm.riskLevel}
+                              value={editForm.category}
                               onChange={(e) =>
-                                handleEditFormChange('riskLevel', e.target.value as RiskLevel)
+                                handleEditFormChange('category', e.target.value as Category)
                               }
                               style={styles.inlineSelect}
                             >
-                              <option value="LOW">LOW</option>
-                              <option value="MEDIUM">MEDIUM</option>
-                              <option value="HIGH">HIGH</option>
+                              {CATEGORIES.map((cat) => (
+                                <option key={cat} value={cat}>
+                                  {cat}
+                                </option>
+                              ))}
                             </select>
                           ) : (
-                            <span style={riskBadgeStyle(rule.riskLevel)}>{rule.riskLevel}</span>
+                            <span style={styles.categoryLabel}>{rule.category}</span>
                           )}
+                        </td>
+
+                        <td style={styles.td}>
+                          <span style={riskBadgeStyle(rule.riskLevel)}>{rule.riskLevel}</span>
+                        </td>
+
+                        <td style={styles.td}>
+                          <span style={styles.weightValue}>{formatWeight(rule.injectionWeight)}</span>
+                        </td>
+
+                        <td style={styles.td}>
+                          <span style={styles.weightValue}>{formatWeight(rule.ambiguityWeight)}</span>
+                        </td>
+
+                        <td style={styles.td}>
+                          <span style={styles.owaspLabel}>{rule.owaspRisk ?? '-'}</span>
                         </td>
 
                         <td style={styles.td}>
@@ -521,6 +603,14 @@ export default function AdminRulesPage() {
                                 </button>
                                 <button
                                   type="button"
+                                  onClick={() => void handleRecalculate(rule.id)}
+                                  disabled={recalculatingId === rule.id}
+                                  style={styles.smallRecalcButton}
+                                >
+                                  {recalculatingId === rule.id ? '계산중...' : 'Recalculate'}
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => void handleDeleteRule(rule.id)}
                                   disabled={submitting}
                                   style={styles.smallDangerButton}
@@ -555,6 +645,14 @@ function riskBadgeStyle(riskLevel: RiskLevel): React.CSSProperties {
     fontWeight: 700,
   };
 
+  if (riskLevel === 'CRITICAL') {
+    return {
+      ...common,
+      backgroundColor: '#5c0a0a',
+      color: '#ff6b6b',
+    };
+  }
+
   if (riskLevel === 'HIGH') {
     return {
       ...common,
@@ -571,10 +669,19 @@ function riskBadgeStyle(riskLevel: RiskLevel): React.CSSProperties {
     };
   }
 
+  if (riskLevel === 'LOW') {
+    return {
+      ...common,
+      backgroundColor: '#173a2d',
+      color: '#7df1b2',
+    };
+  }
+
+  // NOTE
   return {
     ...common,
-    backgroundColor: '#173a2d',
-    color: '#7df1b2',
+    backgroundColor: '#2a2d35',
+    color: '#9ca3af',
   };
 }
 
@@ -822,6 +929,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     cursor: 'pointer',
   },
+  smallRecalcButton: {
+    height: '36px',
+    borderRadius: '10px',
+    border: 'none',
+    backgroundColor: '#6d28d9',
+    color: '#ffffff',
+    padding: '0 12px',
+    fontSize: '13px',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
   smallDangerButton: {
     height: '36px',
     borderRadius: '10px',
@@ -854,6 +972,21 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     fontWeight: 700,
     cursor: 'pointer',
+  },
+  categoryLabel: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#c4b5fd',
+  },
+  weightValue: {
+    fontSize: '13px',
+    fontFamily: 'monospace',
+    color: '#94a3b8',
+  },
+  owaspLabel: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#fb923c',
   },
   errorBox: {
     padding: '14px 18px',

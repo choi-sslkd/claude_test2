@@ -46,6 +46,7 @@ let wasmModule = null;
 let analyzePrompt = null;
 
 const RULES_API_URL = 'http://localhost:3000/admin/rules/active';
+const SCORE_API_URL = 'http://localhost:3000/api/v1/score';
 const RULES_REFRESH_MS = 60 * 1000;
 
 let activeRules = [];
@@ -301,6 +302,18 @@ setInterval(() => {
   fetchActiveRules();
 }, RULES_REFRESH_MS);
 
+// Server API scoring (primary path)
+async function scoreViaServer(text) {
+  const response = await fetch(SCORE_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: text }),
+  });
+
+  if (!response.ok) throw new Error(`Server scoring failed: ${response.status}`);
+  return response.json();
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type !== 'ANALYZE_PROMPT') {
     return true;
@@ -308,36 +321,75 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   (async () => {
     try {
-      await ensureWasmLoaded();
-      await ensureRulesLoaded();
-
       const text = typeof request.text === 'string' ? request.text : '';
 
       let result;
       try {
-        result = analyzePromptWithWasm(text);
-      } catch (wasmError) {
-        console.warn('[Prompt Guard] Wasm 분석 실패, fallback 사용:', wasmError);
-        result = buildFallbackAnalysis(text);
+        // Primary: server API (ML + pattern + OWASP weights)
+        const serverResult = await scoreViaServer(text);
+        const blocked = serverResult.overallRisk === 'HIGH' || serverResult.overallRisk === 'CRITICAL';
+
+        result = {
+          status: 'success',
+          source: 'server-api',
+          injectionScore: serverResult.injectionScore,
+          injectionPct: serverResult.injectionPct,
+          injectionSeverity: serverResult.injectionSeverity,
+          ambiguityScore: serverResult.ambiguityScore,
+          ambiguityPct: serverResult.ambiguityPct,
+          ambiguitySeverity: serverResult.ambiguitySeverity,
+          overallRisk: serverResult.overallRisk,
+          blocked,
+          matches: serverResult.matchedRules || [],
+          message: blocked
+            ? `Injection: ${serverResult.injectionPct} | Ambiguity: ${serverResult.ambiguityPct}`
+            : `Injection: ${serverResult.injectionPct} | Ambiguity: ${serverResult.ambiguityPct}`,
+        };
+      } catch (serverError) {
+        // Fallback: local WASM/pattern matching (offline mode)
+        console.warn('[Prompt Guard] Server unavailable, using fallback:', serverError.message);
+        await ensureWasmLoaded();
+        await ensureRulesLoaded();
+
+        try {
+          const wasmResult = analyzePromptWithWasm(text);
+          result = {
+            status: 'success',
+            source: 'wasm-fallback',
+            injectionScore: 0,
+            injectionPct: 'N/A',
+            injectionSeverity: wasmResult.riskLevel,
+            ambiguityScore: 0,
+            ambiguityPct: 'N/A',
+            ambiguitySeverity: 'note',
+            overallRisk: wasmResult.riskLevel,
+            blocked: wasmResult.blocked,
+            matches: wasmResult.matches,
+            message: wasmResult.message,
+          };
+        } catch {
+          const fallback = buildFallbackAnalysis(text);
+          result = {
+            status: 'success',
+            source: 'pattern-fallback',
+            injectionScore: 0,
+            injectionPct: 'N/A',
+            injectionSeverity: fallback.riskLevel,
+            ambiguityScore: 0,
+            ambiguityPct: 'N/A',
+            ambiguitySeverity: 'note',
+            overallRisk: fallback.riskLevel,
+            blocked: fallback.blocked,
+            matches: fallback.matches,
+            message: fallback.message,
+          };
+        }
       }
 
-      sendResponse({
-        status: 'success',
-        version: rulesVersion,
-        source: result.source,
-        score: result.score,
-        riskLevel: result.riskLevel,
-        blocked: result.blocked,
-        matches: result.matches,
-        message: result.message,
-      });
+      sendResponse(result);
     } catch (error) {
       console.error('[Prompt Guard] 분석 중 에러:', error);
-
-      sendResponse({
-        status: 'error',
-        message: error?.message || String(error),
-      });
+      sendResponse({ status: 'error', message: error?.message || String(error) });
     }
   })();
 

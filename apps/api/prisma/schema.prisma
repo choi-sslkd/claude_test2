@@ -8,19 +8,49 @@ datasource db {
 }
 
 enum RiskLevel {
+  NOTE
   LOW
   MEDIUM
   HIGH
+  CRITICAL
+}
+
+enum OwaspCategory {
+  PROMPT_INJECTION
+  SYSTEM_PROMPT_EXTRACTION
+  JAILBREAK
+  DATA_EXFILTRATION
+  AMBIGUOUS_REQUEST
+  POLICY_BYPASS
+  SENSITIVE_DATA
+  CUSTOM
 }
 
 model Rule {
-  id        String    @id @default(cuid())
+  id        String        @id @default(cuid())
   pattern   String
-  riskLevel RiskLevel
-  enabled   Boolean   @default(true)
-  version   String    @default("1.0.0")
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  riskLevel RiskLevel     @default(LOW)
+  enabled   Boolean       @default(true)
+  version   String        @default("1.0.0")
+
+  // OWASP category & weights (auto-calculated)
+  category        OwaspCategory @default(CUSTOM)
+  injectionWeight Float         @default(0)
+  ambiguityWeight Float         @default(0)
+  patternWeight   Float         @default(0.3)
+
+  // OWASP factor scores (0-9 scale)
+  likelihoodScore Float         @default(0)
+  impactScore     Float         @default(0)
+  owaspRiskScore  Float         @default(0)
+
+  // ML calibration scores from test prompts
+  mlInjectionScore Float        @default(0)
+  mlAmbiguityScore Float        @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([enabled])
+  @@index([category])
 }

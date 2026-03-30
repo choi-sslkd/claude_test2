@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RulesModule } from './modules/rules/rules.module';
 import { AnalyzeModule } from './modules/analyze/analyze.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
+import { ScoringModule } from './modules/scoring/scoring.module';
 
 import { HealthController } from './modules/health/health.controller';
 
@@ -23,6 +24,7 @@ import { AdminAuthService } from './modules/admin-auth/admin-auth.service';
     AuditLogModule,
     RulesModule,
     AnalyzeModule,
+    ScoringModule,
   ],
   controllers: [
     HealthController,

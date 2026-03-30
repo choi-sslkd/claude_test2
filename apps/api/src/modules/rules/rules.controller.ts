@@ -52,4 +52,10 @@ export class RulesController {
   remove(@Param('id') id: string) {
     return this.rulesService.remove(id);
   }
+
+  @ApiOperation({ summary: '가중치 재계산 (OWASP + ML)' })
+  @Post(':id/recalculate')
+  recalculate(@Param('id') id: string) {
+    return this.rulesService.recalculateWeights(id);
+  }
 }
