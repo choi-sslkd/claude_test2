@@ -1,7 +1,49 @@
 // extension/background.js
+
+// --- Inlined from build/release.js (import not allowed in service worker) ---
+async function instantiateWasm(module, imports = {}) {
+  const adaptedImports = {
+    env: Object.assign(Object.create(globalThis), imports.env || {}, {
+      abort(message, fileName, lineNumber, columnNumber) {
+        message = __liftString(message >>> 0);
+        fileName = __liftString(fileName >>> 0);
+        lineNumber = lineNumber >>> 0;
+        columnNumber = columnNumber >>> 0;
+        throw Error(`${message} in ${fileName}:${lineNumber}:${columnNumber}`);
+      },
+    }),
+  };
+  const { exports } = await WebAssembly.instantiate(module, adaptedImports);
+  const memory = exports.memory || imports.env.memory;
+  const adaptedExports = Object.setPrototypeOf({
+    analyzePrompt(prompt) {
+      prompt = __lowerString(prompt) || __notnull();
+      return exports.analyzePrompt(prompt);
+    },
+  }, exports);
+  function __liftString(pointer) {
+    if (!pointer) return null;
+    const end = pointer + new Uint32Array(memory.buffer)[pointer - 4 >>> 2] >>> 1;
+    const memoryU16 = new Uint16Array(memory.buffer);
+    let start = pointer >>> 1, string = "";
+    while (end - start > 1024) string += String.fromCharCode(...memoryU16.subarray(start, start += 1024));
+    return string + String.fromCharCode(...memoryU16.subarray(start, end));
+  }
+  function __lowerString(value) {
+    if (value == null) return 0;
+    const length = value.length;
+    const pointer = exports.__new(length << 1, 2) >>> 0;
+    const memoryU16 = new Uint16Array(memory.buffer);
+    for (let i = 0; i < length; ++i) memoryU16[(pointer >>> 1) + i] = value.charCodeAt(i);
+    return pointer;
+  }
+  function __notnull() { throw TypeError("value must not be null"); }
+  return adaptedExports;
+}
+// --- End inlined WASM loader ---
+
 let wasmModule = null;
 let analyzePrompt = null;
-let instantiateFn = null;
 
 const RULES_API_URL = 'http://localhost:3000/admin/rules/active';
 const RULES_REFRESH_MS = 60 * 1000;
@@ -143,17 +185,12 @@ function buildResponseMessage(result, matches) {
 
 async function loadWasmEngine() {
   try {
-    if (!instantiateFn) {
-      const mod = await import('./build/release.js');
-      instantiateFn = mod.instantiate;
-    }
-
     const response = await fetch(chrome.runtime.getURL('build/release.wasm'));
     const buffer = await response.arrayBuffer();
 
     const compiledModule = await WebAssembly.compile(buffer);
 
-    wasmModule = await instantiateFn(compiledModule, {
+    wasmModule = await instantiateWasm(compiledModule, {
       env: {
         abort: () => console.error('Wasm aborted'),
       },
