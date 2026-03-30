@@ -1,3 +1,4 @@
+# Python
 data/raw/
 data/processed/
 data/splits/
@@ -5,9 +6,7 @@ data/splits/
 __pycache__/
 *.pyc
 *.pyo
-.env
 *.egg-info/
-dist/
 build/
 .pytest_cache/
 .ruff_cache/
@@ -15,3 +14,10 @@ build/
 wandb/
 mlruns/
 .ipynb_checkpoints/
+
+# Node.js / TypeScript
+node_modules/
+dist/
+
+# Shared
+.env
