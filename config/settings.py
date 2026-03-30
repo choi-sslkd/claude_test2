@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # API
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = 8001
 
     # Data split ratios
     train_ratio: float = 0.8

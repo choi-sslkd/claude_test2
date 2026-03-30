@@ -20,7 +20,7 @@ export class MlClientService {
     private readonly http: HttpService,
     private readonly config: ConfigService,
   ) {
-    this.baseUrl = this.config.get<string>('mlApiUrl') ?? 'http://localhost:8000';
+    this.baseUrl = this.config.get<string>('mlApiUrl') ?? 'http://localhost:8001';
   }
 
   async score(prompt: string): Promise<MlScoreResult> {

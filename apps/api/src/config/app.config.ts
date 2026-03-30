@@ -17,7 +17,7 @@ export default registerAs('app', () => ({
   adminApiKey: process.env.ADMIN_API_KEY ?? 'dev-admin-key',
 
   // Python ML API URL
-  mlApiUrl: process.env.ML_API_URL ?? 'http://localhost:8000',
+  mlApiUrl: process.env.ML_API_URL ?? 'http://localhost:8001',
 
   // 환경
   nodeEnv: process.env.NODE_ENV ?? 'development',
