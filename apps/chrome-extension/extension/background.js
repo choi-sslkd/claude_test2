@@ -184,21 +184,10 @@ function buildResponseMessage(result, matches) {
   return '위험 패턴이 감지되지 않았습니다.';
 }
 
-function fetchAsArrayBuffer(url) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.responseType = 'arraybuffer';
-    xhr.onload = () => {
-      if (xhr.status === 200 || xhr.status === 0) {
-        resolve(xhr.response);
-      } else {
-        reject(new Error(`XHR failed: ${xhr.status}`));
-      }
-    };
-    xhr.onerror = () => reject(new Error('XHR network error'));
-    xhr.send();
-  });
+async function fetchAsArrayBuffer(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+  return response.arrayBuffer();
 }
 
 async function loadWasmEngine() {
