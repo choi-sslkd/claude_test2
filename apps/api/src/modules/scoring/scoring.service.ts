@@ -58,12 +58,13 @@ export class ScoringService {
     const injectionSeverity = riskScoreToLevel(injectionScore);
     const ambiguitySeverity = riskScoreToLevel(ambiguityScore);
 
-    // Overall = highest of the two
+    // Overall = injection이 주 판단 기준, ambiguity는 참고용
+    // 차단은 injection이 HIGH 이상일 때만 발생
+    // ambiguity는 한 단계 낮춰서 반영 (HIGH→MEDIUM, CRITICAL→HIGH)
     const severityOrder = ['NOTE', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
-    const overallRisk =
-      severityOrder.indexOf(injectionSeverity) >= severityOrder.indexOf(ambiguitySeverity)
-        ? injectionSeverity
-        : ambiguitySeverity;
+    const injIdx = severityOrder.indexOf(injectionSeverity);
+    const ambIdx = Math.max(severityOrder.indexOf(ambiguitySeverity) - 1, 0); // 한 단계 낮춤
+    const overallRisk = severityOrder[Math.max(injIdx, ambIdx)];
 
     return {
       prompt,
