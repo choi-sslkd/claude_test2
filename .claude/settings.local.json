@@ -9,7 +9,10 @@
       "Read(//c/Users/choi/Downloads/**)",
       "Bash(unzip -l \"C:\\\\Users\\\\choi\\\\Downloads\\\\promptguard-feature-core-system.zip\")",
       "Bash(npm install:*)",
-      "Bash(npx prisma:*)"
+      "Bash(npx prisma:*)",
+      "Bash(npx jest:*)",
+      "Bash(DATABASE_URL=\"file:./dev.db\" npx prisma db push --schema prisma/schema.prisma)",
+      "Bash(python scripts/test_rule_engine.py)"
     ]
   }
 }
