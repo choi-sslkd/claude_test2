@@ -178,8 +178,12 @@ echo 'DATABASE_URL="file:./dev.db"' > .env
 npx prisma generate
 npx prisma db push --schema prisma/schema.prisma
 
+# .env 관련 오류 날경우 (cmd)
+set DATABASE_URL=file:./dev.db
+npx prisma db push --schema prisma/schema.prisma
 cd ../..
 ```
+
 
 ### 5. ML 모델 학습 (최초 1회, 약 2~5분)
 
