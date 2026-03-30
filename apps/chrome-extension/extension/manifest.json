@@ -18,6 +18,12 @@
   "host_permissions": [
     "http://localhost:3000/*"
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["build/release.wasm"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   }
