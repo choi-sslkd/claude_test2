@@ -1,61 +1,55 @@
 import {
-  Body, Controller, Get, Param, Patch,
-  Post, Query, UseGuards, Headers,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiSecurity } from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RulesService } from './rules.service';
 import { CreateRuleDto } from './dto/create-rule.dto';
 import { UpdateRuleDto } from './dto/update-rule.dto';
-import { TestRuleDto } from './dto/test-rule.dto';
-import { AdminGuard } from '../../common/guards/admin.guard';
 
-@ApiTags('Rules')
-@Controller('api/v1/rules')
+@ApiTags('Admin Rules')
+@Controller('admin/rules')
 export class RulesController {
   constructor(private readonly rulesService: RulesService) {}
 
+  @ApiOperation({ summary: '활성 룰셋 조회' })
+  @Get('active')
+  findActiveRules() {
+    return this.rulesService.findActiveRules();
+  }
+
+  @ApiOperation({ summary: '룰 전체 조회' })
   @Get()
-  @ApiOperation({ summary: '룰 목록 조회' })
-  findAll(@Query('enabled') enabled?: string) {
-    const enabledOnly = enabled === 'true' ? true : undefined;
-    return this.rulesService.findAll(enabledOnly);
+  findAll() {
+    return this.rulesService.findAll();
   }
 
-  @Get(':ruleId')
   @ApiOperation({ summary: '룰 단건 조회' })
-  findOne(@Param('ruleId') ruleId: string) {
-    return this.rulesService.findOne(ruleId);
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.rulesService.findOne(id);
   }
 
-  // 관리자 전용 엔드포인트 — AdminGuard 적용
+  @ApiOperation({ summary: '룰 생성' })
   @Post()
-  @UseGuards(AdminGuard)
-  @ApiSecurity('x-admin-key')
-  @ApiOperation({ summary: '룰 생성 (관리자)' })
-  create(
-    @Body() dto: CreateRuleDto,
-    @Headers('x-admin-id') actor?: string,
-  ) {
-    return this.rulesService.create(dto, actor);
+  create(@Body() dto: CreateRuleDto) {
+    return this.rulesService.create(dto);
   }
 
-  @Patch(':ruleId')
-  @UseGuards(AdminGuard)
-  @ApiSecurity('x-admin-key')
-  @ApiOperation({ summary: '룰 수정 (관리자)' })
-  update(
-    @Param('ruleId') ruleId: string,
-    @Body() dto: UpdateRuleDto,
-    @Headers('x-admin-id') actor?: string,
-  ) {
-    return this.rulesService.update(ruleId, dto, actor);
+  @ApiOperation({ summary: '룰 수정' })
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateRuleDto) {
+    return this.rulesService.update(id, dto);
   }
 
-  @Post('test')
-  @UseGuards(AdminGuard)
-  @ApiSecurity('x-admin-key')
-  @ApiOperation({ summary: '룰 테스트 (관리자)' })
-  test(@Body() dto: TestRuleDto) {
-    return this.rulesService.test(dto);
+  @ApiOperation({ summary: '룰 삭제' })
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.rulesService.remove(id);
   }
 }

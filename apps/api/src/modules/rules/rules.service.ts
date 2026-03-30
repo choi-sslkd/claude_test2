@@ -1,82 +1,92 @@
-import {
-  Injectable, NotFoundException, BadRequestException,
-} from '@nestjs/common';
-import { RuleEngine, PromptRule } from '@prompt-guard/rule-engine';
-import { RulesRepository } from './rules.repository';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRuleDto } from './dto/create-rule.dto';
 import { UpdateRuleDto } from './dto/update-rule.dto';
-import { TestRuleDto } from './dto/test-rule.dto';
-import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class RulesService {
-  constructor(
-    private readonly repo: RulesRepository,
-    private readonly auditLogService: AuditLogService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  findAll(enabledOnly?: boolean) {
-    const data = this.repo.findAll(enabledOnly);
-    return { data, total: data.length };
-  }
-
-  findOne(id: string) {
-    const rule = this.repo.findById(id);
-    if (!rule) throw new NotFoundException(`룰 ${id}을 찾을 수 없습니다.`);
-    return rule;
-  }
-
-  create(dto: CreateRuleDto, actor?: string) {
-    const rule = this.repo.create(dto);
-    this.auditLogService.recordAdmin({
-      type: 'rule_create',
-      actor,
-      detail: `룰 생성: ${rule.id} - ${rule.name}`,
+  async findAll() {
+    return this.prisma.rule.findMany({
+      orderBy: { createdAt: 'desc' },
     });
-    return rule;
   }
 
-  update(id: string, dto: UpdateRuleDto, actor?: string) {
-    const updated = this.repo.update(id, dto);
-    if (!updated) throw new NotFoundException(`룰 ${id}을 찾을 수 없습니다.`);
-
-    const logType = dto.enabled === false ? 'rule_disable' : 'rule_update';
-    this.auditLogService.recordAdmin({
-      type: logType,
-      actor,
-      detail: `룰 수정: ${updated.id} v${updated.version}`,
+  async findOne(id: string) {
+    const rule = await this.prisma.rule.findUnique({
+      where: { id },
     });
-    return updated;
-  }
 
-  test(dto: TestRuleDto) {
-    let targetRule: PromptRule;
-
-    if (dto.ruleId) {
-      const found = this.repo.findById(dto.ruleId);
-      if (!found) throw new NotFoundException(`룰 ${dto.ruleId}을 찾을 수 없습니다.`);
-      targetRule = found;
-    } else if (dto.rule) {
-      // 임시 룰 구성
-      const now = new Date().toISOString();
-      targetRule = { ...dto.rule, id: 'TEMP', version: 0, createdAt: now, updatedAt: now };
-    } else {
-      throw new BadRequestException('ruleId 또는 rule 객체가 필요합니다.');
+    if (!rule) {
+      throw new NotFoundException('Rule not found');
     }
 
-    // 단일 룰만 포함한 임시 엔진으로 테스트
-    const engine = RuleEngine.fromRuleData([targetRule]);
-    const result = engine.analyze(dto.prompt);
-    const matched = result.matchedRules.length > 0;
+    return rule;
+  }
+
+  async create(dto: CreateRuleDto) {
+    return this.prisma.rule.create({
+      data: {
+        pattern: dto.pattern,
+        riskLevel: dto.riskLevel,
+        enabled: dto.enabled,
+        version: dto.version ?? '1.0.0',
+      },
+    });
+  }
+
+  async update(id: string, dto: UpdateRuleDto) {
+    await this.findOne(id);
+
+    return this.prisma.rule.update({
+      where: { id },
+      data: {
+        ...(dto.pattern !== undefined && { pattern: dto.pattern }),
+        ...(dto.riskLevel !== undefined && { riskLevel: dto.riskLevel }),
+        ...(dto.enabled !== undefined && { enabled: dto.enabled }),
+        ...(dto.version !== undefined && { version: dto.version }),
+      },
+    });
+  }
+
+  async remove(id: string) {
+    await this.findOne(id);
+
+    return this.prisma.rule.delete({
+      where: { id },
+    });
+  }
+
+  async findActiveRules() {
+    const rules = await this.prisma.rule.findMany({
+      where: { enabled: true },
+      orderBy: { updatedAt: 'desc' },
+    });
 
     return {
-      matched,
-      ...(matched && {
-        riskLevel: result.riskLevel,
-        tags: result.tags,
-        reason: result.reasons[0],
-        rewrite: result.rewrites[0],
-      }),
+      version: this.getRulesetVersion(rules),
+      rules: rules.map((rule) => ({
+        id: rule.id,
+        pattern: rule.pattern,
+        riskLevel: rule.riskLevel,
+      })),
     };
+  }
+
+  private getRulesetVersion(
+    rules: Array<{
+      version: string;
+      updatedAt: Date;
+    }>,
+  ): string {
+    if (rules.length === 0) {
+      return '1.0.0';
+    }
+
+    const latestUpdatedAt = rules[0].updatedAt;
+    const latestVersion = rules[0].version;
+
+    return `${latestVersion}-${latestUpdatedAt.getTime()}`;
   }
 }

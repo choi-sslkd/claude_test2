@@ -1,0 +1,405 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background: #0b1020;
+  color: #ffffff;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.page {
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* 로그인 페이지 */
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(91, 140, 255, 0.18), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(0, 224, 170, 0.12), transparent 25%),
+    #0b1020;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 460px;
+  background: rgba(18, 24, 41, 0.96);
+  border: 1px solid #25304b;
+  border-radius: 18px;
+  padding: 32px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+}
+
+.login-header h1 {
+  margin: 12px 0 10px;
+  font-size: 30px;
+  line-height: 1.2;
+}
+
+.login-header p {
+  margin: 0 0 24px;
+  color: #b9c3d9;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.badge {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #1e2a44;
+  color: #89a8ff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.input-group label {
+  font-size: 14px;
+  color: #d7def0;
+}
+
+.input-group input {
+  height: 46px;
+  border-radius: 12px;
+  border: 1px solid #33415f;
+  background: #0f1527;
+  color: #ffffff;
+  padding: 0 14px;
+  outline: none;
+}
+
+.input-group input:focus {
+  border-color: #5b8cff;
+  box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.18);
+}
+
+.primary-button {
+  margin-top: 4px;
+  height: 48px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #5b8cff, #3d6df2);
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.primary-button:hover {
+  transform: translateY(-1px);
+}
+
+.primary-button:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.error-box {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 82, 118, 0.14);
+  border: 1px solid rgba(255, 82, 118, 0.3);
+  color: #ffb5c4;
+  font-size: 14px;
+}
+
+.login-footer {
+  margin-top: 18px;
+  color: #96a3bf;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* 대시보드 공통 */
+.dashboard-page {
+  display: flex;
+  min-height: 100vh;
+  background: #0b1020;
+}
+
+.sidebar {
+  width: 260px;
+  min-height: 100vh;
+  padding: 24px 18px;
+  border-right: 1px solid #1e2840;
+  background: #0e1528;
+  flex-shrink: 0;
+}
+
+.sidebar-top h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.sidebar-top p {
+  margin: 0 0 28px;
+  color: #94a3c2;
+  font-size: 14px;
+}
+
+.sidebar-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.menu-item {
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  text-align: left;
+  padding: 0 14px;
+  background: #151e34;
+  color: #d5dded;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.menu-item:hover {
+  background: #1a2744;
+}
+
+.menu-item.active {
+  background: #1d305d;
+  color: #9cb8ff;
+  font-weight: 700;
+}
+
+.menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.dashboard-content {
+  flex: 1;
+  min-width: 0;
+  padding: 28px;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.dashboard-header h1 {
+  margin: 0 0 8px;
+  font-size: 32px;
+}
+
+.dashboard-header p {
+  margin: 0;
+  color: #9da9c3;
+  line-height: 1.5;
+}
+
+.logout-button {
+  height: 44px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 12px;
+  background: #ff5f6d;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.card,
+.large-card {
+  width: 100%;
+  background: #11192d;
+  border: 1px solid #1f2a46;
+  border-radius: 18px;
+  padding: 22px;
+}
+
+.card h3,
+.large-card h2 {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
+.card p,
+.large-card p {
+  margin: 0;
+  color: #b8c3db;
+  line-height: 1.7;
+}
+
+.large-card + .large-card {
+  margin-top: 20px;
+}
+
+code {
+  background: #0a1224;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: #8db2ff;
+}
+
+/* 로그 테이블 */
+.log-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 20px;
+  border-radius: 14px;
+}
+
+.log-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  color: #f5f7ff;
+}
+
+.log-table th,
+.log-table td {
+  padding: 16px 14px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  line-height: 1.6;
+}
+
+.log-table th {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.02);
+  white-space: nowrap;
+}
+
+.log-table td {
+  font-size: 15px;
+  color: #d9e1f2;
+}
+
+.log-time {
+  min-width: 150px;
+  white-space: nowrap;
+}
+
+.log-type {
+  min-width: 120px;
+  white-space: nowrap;
+}
+
+.log-description {
+  min-width: 360px;
+  word-break: keep-all;
+}
+
+.log-status {
+  min-width: 100px;
+  white-space: nowrap;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status.success {
+  background: rgba(82, 196, 26, 0.18);
+  color: #95de64;
+}
+
+.status.warning {
+  background: rgba(250, 173, 20, 0.18);
+  color: #ffd666;
+}
+
+.status.info {
+  background: rgba(22, 119, 255, 0.18);
+  color: #91caff;
+}
+
+/* 반응형 */
+@media (max-width: 1024px) {
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .dashboard-page {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    min-height: auto;
+    border-right: none;
+    border-bottom: 1px solid #1e2840;
+  }
+
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-content {
+    padding: 24px 16px;
+  }
+
+  .dashboard-header h1 {
+    font-size: 28px;
+  }
+
+  .log-table {
+    min-width: 760px;
+  }
+}

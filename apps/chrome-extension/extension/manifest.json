@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Prompt Guard (Wasm Local)",
+  "version": "1.0",
+  "description": "서버 전송 없이 브라우저 내부에서 작동하는 프롬프트 검사기",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": ["content.js"]
+    }
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

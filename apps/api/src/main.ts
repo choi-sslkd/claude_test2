@@ -10,22 +10,32 @@ import { globalValidationPipe } from './common/pipes/validation.pipe';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // 전역 파이프 / 필터 / 인터셉터
   app.useGlobalPipes(globalValidationPipe);
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  // CORS
-  app.enableCors();
+  app.enableCors({
+    origin: [
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key'],
+  });
 
-  // Swagger 문서
   const swagger = new DocumentBuilder()
     .setTitle('Prompt Guard API')
-    .setDescription('AI 프롬프트 보안 분석 API')
+    .setDescription('관리자 룰 관리 및 활성 룰 배포 API')
     .setVersion('1.0')
-    .addApiKey({ type: 'apiKey', name: 'x-admin-key', in: 'header' }, 'x-admin-key')
+    .addApiKey(
+      { type: 'apiKey', name: 'x-admin-key', in: 'header' },
+      'x-admin-key',
+    )
     .build();
-  SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swagger));
+
+  const document = SwaggerModule.createDocument(app, swagger);
+  SwaggerModule.setup('docs', app, document);
 
   const config = app.get(ConfigService);
   const port = config.get<number>('app.port', 3000);

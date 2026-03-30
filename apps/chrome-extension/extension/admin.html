@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PromptGuard 관리자</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    width: 600px;
+    min-height: 400px;
+    overflow-x: hidden;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+    border-bottom: 1px solid #30363d;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .header-left { display: flex; align-items: center; gap: 10px; }
+  .header-title { font-size: 16px; font-weight: 700; color: #f0f6fc; letter-spacing: -0.3px; }
+  .version-badge {
+    background: #1f6feb;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 20px;
+    letter-spacing: 0.3px;
+  }
+  .btn-add {
+    background: #238636;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: background 0.15s;
+  }
+  .btn-add:hover { background: #2ea043; }
+
+  /* Stats Bar */
+  .stats-bar {
+    display: flex;
+    gap: 10px;
+    padding: 12px 18px;
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+  }
+  .stat-card {
+    flex: 1;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 10px 14px;
+    text-align: center;
+  }
+  .stat-value { font-size: 22px; font-weight: 700; color: #f0f6fc; line-height: 1.2; }
+  .stat-label { font-size: 11px; color: #8b949e; margin-top: 2px; }
+  .stat-card.active .stat-value { color: #3fb950; }
+  .stat-card.inactive .stat-value { color: #8b949e; }
+
+  /* Table Container */
+  .table-container {
+    padding: 12px 18px 18px;
+    max-height: 340px;
+    overflow-y: auto;
+  }
+  .table-container::-webkit-scrollbar { width: 6px; }
+  .table-container::-webkit-scrollbar-track { background: #0d1117; }
+  .table-container::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  thead th {
+    background: #161b22;
+    color: #8b949e;
+    font-weight: 600;
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid #30363d;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  tbody tr {
+    border-bottom: 1px solid #21262d;
+    transition: background 0.1s;
+  }
+  tbody tr:hover { background: #161b22; }
+  tbody tr.edit-row { background: #161b22; }
+  tbody td { padding: 8px 10px; vertical-align: middle; }
+
+  /* Category Badge */
+  .badge-cat {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    letter-spacing: 0.3px;
+  }
+  .cat-INJECTION { background: #3d0f0f; color: #f85149; border: 1px solid #f8514940; }
+  .cat-PUZZLE    { background: #2d1b00; color: #d29922; border: 1px solid #d2992240; }
+  .cat-PII_LEAK  { background: #0d2149; color: #58a6ff; border: 1px solid #58a6ff40; }
+  .cat-SYSTEM_PROMPT { background: #1a1040; color: #bc8cff; border: 1px solid #bc8cff40; }
+
+  /* Weight Badge */
+  .badge-weight {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    min-width: 28px;
+    text-align: center;
+  }
+  .w-10 { background: #3d0f0f; color: #f85149; }
+  .w-5  { background: #2d1b00; color: #d29922; }
+  .w-3  { background: #2d2500; color: #e3b341; }
+  .w-1  { background: #1c1c1c; color: #8b949e; }
+
+  /* Pattern text */
+  .pattern-text {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 11px;
+    color: #79c0ff;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+  }
+
+  /* Toggle Switch */
+  .toggle-wrap { display: flex; align-items: center; gap: 6px; }
+  .toggle {
+    position: relative;
+    width: 34px;
+    height: 18px;
+    cursor: pointer;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .slider {
+    position: absolute;
+    inset: 0;
+    background: #30363d;
+    border-radius: 18px;
+    transition: background 0.2s;
+  }
+  .slider::before {
+    content: '';
+    position: absolute;
+    width: 12px; height: 12px;
+    left: 3px; top: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .toggle input:checked + .slider { background: #238636; }
+  .toggle input:checked + .slider::before { transform: translateX(16px); }
+  .toggle-label { font-size: 11px; font-weight: 600; }
+  .toggle-label.on { color: #3fb950; }
+  .toggle-label.off { color: #8b949e; }
+
+  /* Action buttons */
+  .btn-edit, .btn-delete, .btn-save, .btn-cancel {
+    border: none;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 9px;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  .btn-edit   { background: #1f6feb20; color: #58a6ff; border: 1px solid #1f6feb50; }
+  .btn-edit:hover { background: #1f6feb40; }
+  .btn-delete { background: #f8514910; color: #f85149; border: 1px solid #f8514940; margin-left: 4px; }
+  .btn-delete:hover { background: #f8514930; }
+  .btn-delete:disabled { opacity: 0.35; cursor: default; }
+  .btn-save   { background: #238636; color: #fff; }
+  .btn-save:hover { background: #2ea043; }
+  .btn-cancel { background: #30363d; color: #c9d1d9; margin-left: 4px; }
+  .btn-cancel:hover { background: #3d444e; }
+
+  .lock-icon { font-size: 11px; margin-right: 2px; opacity: 0.7; }
+
+  /* Inline edit inputs */
+  .inline-input, .inline-select {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    border-radius: 5px;
+    padding: 4px 7px;
+    font-size: 11px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .inline-input:focus, .inline-select:focus { border-color: #1f6feb; }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #8b949e;
+  }
+  .empty-state .empty-icon { font-size: 32px; margin-bottom: 8px; }
+
+  /* Modal overlay */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 22px 24px;
+    width: 360px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+    animation: modalIn 0.15s ease;
+  }
+  @keyframes modalIn {
+    from { transform: scale(0.96) translateY(-8px); opacity: 0; }
+    to   { transform: scale(1) translateY(0); opacity: 1; }
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  .modal-title { font-size: 14px; font-weight: 700; color: #f0f6fc; }
+  .modal-close {
+    background: none;
+    border: none;
+    color: #8b949e;
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .modal-close:hover { background: #30363d; color: #c9d1d9; }
+
+  .form-group { margin-bottom: 14px; }
+  .form-label { display: block; font-size: 11px; font-weight: 600; color: #8b949e; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .form-input, .form-select {
+    width: 100%;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-input:focus, .form-select:focus { border-color: #1f6feb; }
+  .form-input.error { border-color: #f85149; }
+  .form-error { font-size: 11px; color: #f85149; margin-top: 4px; display: none; }
+  .form-error.visible { display: block; }
+
+  .form-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #30363d;
+  }
+  .btn-modal-save {
+    background: #238636;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 18px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-modal-save:hover { background: #2ea043; }
+  .btn-modal-cancel {
+    background: #30363d;
+    color: #c9d1d9;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-modal-cancel:hover { background: #3d444e; }
+
+  /* Toast */
+  .toast-container {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    pointer-events: none;
+  }
+  .toast {
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    animation: toastIn 0.2s ease, toastOut 0.3s ease 1.7s forwards;
+    white-space: nowrap;
+  }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes toastOut {
+    from { opacity: 1; transform: translateY(0); }
+    to   { opacity: 0; transform: translateY(8px); }
+  }
+  .toast.success { background: #1a3a1f; color: #3fb950; border: 1px solid #3fb95060; }
+  .toast.error   { background: #3d0f0f; color: #f85149; border: 1px solid #f8514960; }
+  .toast.warning { background: #2d1b00; color: #d29922; border: 1px solid #d2992260; }
+
+  /* Tooltip */
+  [data-tooltip] { position: relative; }
+  [data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1c2128;
+    color: #f0f6fc;
+    border: 1px solid #30363d;
+    border-radius: 5px;
+    padding: 5px 9px;
+    font-size: 11px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 50;
+  }
+  [data-tooltip]:hover::after { opacity: 1; }
+
+  /* Divider */
+  .section-divider { border: none; border-top: 1px solid #21262d; margin: 0; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <span class="header-title">🛡️ PromptGuard 관리자</span>
+    <span class="version-badge">v2.0</span>
+  </div>
+  <button class="btn-add" id="btnOpenAdd">＋ 룰 추가</button>
+</div>
+
+<!-- Stats Bar -->
+<div class="stats-bar">
+  <div class="stat-card">
+    <div class="stat-value" id="statTotal">0</div>
+    <div class="stat-label">전체 룰</div>
+  </div>
+  <div class="stat-card active">
+    <div class="stat-value" id="statActive">0</div>
+    <div class="stat-label">활성 룰</div>
+  </div>
+  <div class="stat-card inactive">
+    <div class="stat-value" id="statInactive">0</div>
+    <div class="stat-label">비활성 룰</div>
+  </div>
+</div>
+
+<hr class="section-divider">
+
+<!-- Table -->
+<div class="table-container">
+  <table id="rulesTable">
+    <thead>
+      <tr>
+        <th>카테고리</th>
+        <th>패턴</th>
+        <th>가중치</th>
+        <th>상태</th>
+        <th>액션</th>
+      </tr>
+    </thead>
+    <tbody id="rulesBody">
+    </tbody>
+  </table>
+  <div class="empty-state" id="emptyState" style="display:none;">
+    <div class="empty-icon">📋</div>
+    <div>등록된 룰이 없습니다.</div>
+  </div>
+</div>
+
+<!-- Add Rule Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">➕ 새 룰 추가</span>
+      <button class="modal-close" id="btnCloseModal">✕</button>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">룰 ID</label>
+      <input class="form-input" id="addId" type="text" placeholder="예: custom_rule_01" autocomplete="off">
+      <div class="form-error" id="errId">ID는 필수이며 중복될 수 없습니다.</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">패턴</label>
+      <input class="form-input" id="addPattern" type="text" placeholder="키워드1|키워드2|키워드3" autocomplete="off">
+      <div class="form-error" id="errPattern">패턴은 필수입니다.</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">가중치</label>
+      <select class="form-select" id="addWeight">
+        <option value="10">Critical (10)</option>
+        <option value="5">High (5)</option>
+        <option value="3" selected>Medium (3)</option>
+        <option value="1">Low (1)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">카테고리</label>
+      <select class="form-select" id="addCategory">
+        <option value="INJECTION">INJECTION</option>
+        <option value="PUZZLE">PUZZLE</option>
+        <option value="PII_LEAK">PII_LEAK</option>
+        <option value="SYSTEM_PROMPT">SYSTEM_PROMPT</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">활성화</label>
+      <div class="form-toggle-row">
+        <label class="toggle">
+          <input type="checkbox" id="addEnabled" checked>
+          <span class="slider"></span>
+        </label>
+        <span id="addEnabledLabel" class="toggle-label on">활성</span>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" id="btnCancelModal">취소</button>
+      <button class="btn-modal-save" id="btnSaveModal">💾 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ─────────────────────────────────────────────
+// Mock data for standalone preview
+// ─────────────────────────────────────────────
+const MOCK_RULES = [
+  { id: 'inj_ignore_prev',   pattern: 'ignore previous|forget instructions', weight: 10, category: 'INJECTION',      enabled: true,  isDefault: true  },
+  { id: 'inj_act_as',        pattern: 'act as|pretend you are|roleplay as',   weight: 10, category: 'INJECTION',      enabled: true,  isDefault: true  },
+  { id: 'pzl_base64',        pattern: 'base64|decode this|encoded message',   weight: 5,  category: 'PUZZLE',         enabled: true,  isDefault: true  },
+  { id: 'pii_ssn',           pattern: '\\d{3}-\\d{2}-\\d{4}|social security', weight: 5,  category: 'PII_LEAK',       enabled: true,  isDefault: true  },
+  { id: 'sys_prompt_leak',   pattern: 'system prompt|reveal your instructions', weight: 5, category: 'SYSTEM_PROMPT', enabled: false, isDefault: true  },
+  { id: 'custom_jailbreak',  pattern: 'jailbreak|dan mode|developer mode',    weight: 3,  category: 'INJECTION',      enabled: true,  isDefault: false },
+  { id: 'custom_email_leak', pattern: '\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b', weight: 1, category: 'PII_LEAK', enabled: false, isDefault: false },
+];
+
+let rules = JSON.parse(JSON.stringify(MOCK_RULES));
+let editingId = null;
+
+// ─────────────────────────────────────────────
+// Chrome message bridge (falls back to mock)
+// ─────────────────────────────────────────────
+function sendMsg(action, payload = {}) {
+  return new Promise((resolve) => {
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({ action, ...payload }, (resp) => {
+        resolve(resp);
+      });
+    } else {
+      // Mock responses
+      setTimeout(() => {
+        if (action === 'GET_RULES')    resolve({ success: true, rules });
+        if (action === 'ADD_RULE')     { rules.push(payload.rule); resolve({ success: true }); }
+        if (action === 'UPDATE_RULE')  { const i = rules.findIndex(r => r.id === payload.rule.id); if (i > -1) rules[i] = payload.rule; resolve({ success: true }); }
+        if (action === 'DELETE_RULE')  { rules = rules.filter(r => r.id !== payload.id); resolve({ success: true }); }
+        if (action === 'TOGGLE_RULE')  { const r = rules.find(r => r.id === payload.id); if (r) r.enabled = payload.enabled; resolve({ success: true }); }
+      }, 80);
+    }
+  });
+}
+
+// ─────────────────────────────────────────────
+// Render
+// ─────────────────────────────────────────────
+function catBadge(cat) {
+  return `<span class="badge-cat cat-${cat}">${cat}</span>`;
+}
+
+function weightBadge(w) {
+  const cls = w >= 10 ? 'w-10' : w >= 5 ? 'w-5' : w >= 3 ? 'w-3' : 'w-1';
+  const label = w >= 10 ? 'Critical' : w >= 5 ? 'High' : w >= 3 ? 'Medium' : 'Low';
+  return `<span class="badge-weight ${cls}">${w} <span style="font-weight:400;opacity:.7;">${label}</span></span>`;
+}
+
+function updateStats(ruleList) {
+  const total    = ruleList.length;
+  const active   = ruleList.filter(r => r.enabled).length;
+  const inactive = total - active;
+  document.getElementById('statTotal').textContent   = total;
+  document.getElementById('statActive').textContent  = active;
+  document.getElementById('statInactive').textContent = inactive;
+}
+
+function renderTable(ruleList) {
+  const tbody = document.getElementById('rulesBody');
+  const empty = document.getElementById('emptyState');
+  tbody.innerHTML = '';
+  updateStats(ruleList);
+
+  if (!ruleList.length) {
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  ruleList.forEach(rule => {
+    if (editingId === rule.id) {
+      tbody.appendChild(buildEditRow(rule));
+    } else {
+      tbody.appendChild(buildViewRow(rule));
+    }
+  });
+}
+
+function buildViewRow(rule) {
+  const tr = document.createElement('tr');
+  tr.dataset.id = rule.id;
+
+  const deleteBtn = rule.isDefault
+    ? `<button class="btn-delete" disabled data-tooltip="기본 룰은 삭제 불가"><span class="lock-icon">🔒</span>삭제</button>`
+    : `<button class="btn-delete" data-action="delete" data-id="${rule.id}">삭제</button>`;
+
+  tr.innerHTML = `
+    <td>${catBadge(rule.category)}</td>
+    <td><span class="pattern-text" title="${rule.pattern}">${rule.pattern}</span></td>
+    <td>${weightBadge(rule.weight)}</td>
+    <td>
+      <div class="toggle-wrap">
+        <label class="toggle">
+          <input type="checkbox" ${rule.enabled ? 'checked' : ''} data-action="toggle" data-id="${rule.id}">
+          <span class="slider"></span>
+        </label>
+        <span class="toggle-label ${rule.enabled ? 'on' : 'off'}">${rule.enabled ? '활성' : '비활성'}</span>
+      </div>
+    </td>
+    <td>
+      <button class="btn-edit" data-action="edit" data-id="${rule.id}">수정</button>
+      ${deleteBtn}
+    </td>
+  `;
+  return tr;
+}
+
+function buildEditRow(rule) {
+  const tr = document.createElement('tr');
+  tr.className = 'edit-row';
+  tr.innerHTML = `
+    <td colspan="5" style="padding:12px 10px;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+        <div>
+          <div class="form-label" style="margin-bottom:3px;">패턴</div>
+          <input class="inline-input" id="editPattern" value="${rule.pattern}">
+        </div>
+        <div>
+          <div class="form-label" style="margin-bottom:3px;">가중치</div>
+          <select class="inline-select" id="editWeight">
+            <option value="10" ${rule.weight==10?'selected':''}>Critical (10)</option>
+            <option value="5"  ${rule.weight==5?'selected':''}>High (5)</option>
+            <option value="3"  ${rule.weight==3?'selected':''}>Medium (3)</option>
+            <option value="1"  ${rule.weight==1?'selected':''}>Low (1)</option>
+          </select>
+        </div>
+        <div>
+          <div class="form-label" style="margin-bottom:3px;">카테고리</div>
+          <select class="inline-select" id="editCategory">
+            <option value="INJECTION"     ${rule.category==='INJECTION'?'selected':''}>INJECTION</option>
+            <option value="PUZZLE"        ${rule.category==='PUZZLE'?'selected':''}>PUZZLE</option>
+            <option value="PII_LEAK"      ${rule.category==='PII_LEAK'?'selected':''}>PII_LEAK</option>
+            <option value="SYSTEM_PROMPT" ${rule.category==='SYSTEM_PROMPT'?'selected':''}>SYSTEM_PROMPT</option>
+          </select>
+        </div>
+        <div>
+          <div class="form-label" style="margin-bottom:3px;">활성화</div>
+          <div class="form-toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="editEnabled" ${rule.enabled?'checked':''}>
+              <span class="slider"></span>
+            </label>
+            <span id="editEnabledLabel" class="toggle-label ${rule.enabled?'on':'off'}">${rule.enabled?'활성':'비활성'}</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; gap:6px; justify-content:flex-end;">
+        <button class="btn-save" data-action="save-edit" data-id="${rule.id}">💾 저장</button>
+        <button class="btn-cancel" data-action="cancel-edit">취소</button>
+      </div>
+    </td>
+  `;
+
+  // Live toggle label in edit row
+  const editEnabledCb = tr.querySelector('#editEnabled');
+  const editEnabledLbl = tr.querySelector('#editEnabledLabel');
+  editEnabledCb.addEventListener('change', () => {
+    editEnabledLbl.textContent = editEnabledCb.checked ? '활성' : '비활성';
+    editEnabledLbl.className = 'toggle-label ' + (editEnabledCb.checked ? 'on' : 'off');
+  });
+
+  return tr;
+}
+
+// ─────────────────────────────────────────────
+// Load
+// ─────────────────────────────────────────────
+async function loadRules() {
+  const resp = await sendMsg('GET_RULES');
+  if (resp && resp.success) {
+    rules = resp.rules;
+    renderTable(rules);
+  }
+}
+
+// ─────────────────────────────────────────────
+// Table event delegation
+// ─────────────────────────────────────────────
+document.getElementById('rulesBody').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const id     = btn.dataset.id;
+
+  if (action === 'edit') {
+    editingId = id;
+    renderTable(rules);
+    return;
+  }
+
+  if (action === 'cancel-edit') {
+    editingId = null;
+    renderTable(rules);
+    return;
+  }
+
+  if (action === 'save-edit') {
+    const pattern  = document.getElementById('editPattern').value.trim();
+    const weight   = parseInt(document.getElementById('editWeight').value);
+    const category = document.getElementById('editCategory').value;
+    const enabled  = document.getElementById('editEnabled').checked;
+
+    if (!pattern) { showToast('패턴을 입력해주세요.', 'error'); return; }
+
+    const original = rules.find(r => r.id === id);
+    const updated  = { ...original, pattern, weight, category, enabled };
+    const resp = await sendMsg('UPDATE_RULE', { rule: updated });
+    if (resp && resp.success) {
+      editingId = null;
+      await loadRules();
+      showToast('룰이 수정되었습니다.', 'success');
+    } else {
+      showToast('수정에 실패했습니다.', 'error');
+    }
+    return;
+  }
+
+  if (action === 'toggle') {
+    const cb = e.target;
+    const enabled = cb.checked;
+    const resp = await sendMsg('TOGGLE_RULE', { id, enabled });
+    if (resp && resp.success) {
+      const rule = rules.find(r => r.id === id);
+      if (rule) rule.enabled = enabled;
+      // Update label instantly
+      const wrap  = cb.closest('.toggle-wrap');
+      const label = wrap.querySelector('.toggle-label');
+      label.textContent = enabled ? '활성' : '비활성';
+      label.className   = 'toggle-label ' + (enabled ? 'on' : 'off');
+      updateStats(rules);
+      showToast(enabled ? '룰이 활성화되었습니다.' : '룰이 비활성화되었습니다.', 'success');
+    } else {
+      cb.checked = !enabled; // revert
+      showToast('상태 변경에 실패했습니다.', 'error');
+    }
+    return;
+  }
+
+  if (action === 'delete') {
+    const rule = rules.find(r => r.id === id);
+    if (!rule) return;
+    if (!confirm(`"${id}" 룰을 삭제하시겠습니까?`)) return;
+    const resp = await sendMsg('DELETE_RULE', { id });
+    if (resp && resp.success) {
+      await loadRules();
+      showToast('룰이 삭제되었습니다.', 'warning');
+    } else {
+      showToast('삭제에 실패했습니다.', 'error');
+    }
+    return;
+  }
+});
+
+// ─────────────────────────────────────────────
+// Modal
+// ─────────────────────────────────────────────
+const modalOverlay = document.getElementById('modalOverlay');
+document.getElementById('btnOpenAdd').addEventListener('click', () => {
+  clearModal();
+  modalOverlay.classList.add('active');
+});
+document.getElementById('btnCloseModal').addEventListener('click', closeModal);
+document.getElementById('btnCancelModal').addEventListener('click', closeModal);
+modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+
+function closeModal() { modalOverlay.classList.remove('active'); clearModal(); }
+function clearModal() {
+  document.getElementById('addId').value      = '';
+  document.getElementById('addPattern').value = '';
+  document.getElementById('addWeight').value  = '3';
+  document.getElementById('addCategory').value= 'INJECTION';
+  document.getElementById('addEnabled').checked = true;
+  document.getElementById('addEnabledLabel').textContent = '활성';
+  document.getElementById('addEnabledLabel').className   = 'toggle-label on';
+  ['errId','errPattern'].forEach(id => {
+    document.getElementById(id).classList.remove('visible');
+  });
+  ['addId','addPattern'].forEach(id => {
+    document.getElementById(id).classList.remove('error');
+  });
+}
+
+// Modal toggle label
+document.getElementById('addEnabled').addEventListener('change', function() {
+  const lbl = document.getElementById('addEnabledLabel');
+  lbl.textContent = this.checked ? '활성' : '비활성';
+  lbl.className   = 'toggle-label ' + (this.checked ? 'on' : 'off');
+});
+
+document.getElementById('btnSaveModal').addEventListener('click', async () => {
+  const idVal      = document.getElementById('addId').value.trim();
+  const patternVal = document.getElementById('addPattern').value.trim();
+  const weightVal  = parseInt(document.getElementById('addWeight').value);
+  const categoryVal= document.getElementById('addCategory').value;
+  const enabledVal = document.getElementById('addEnabled').checked;
+
+  let valid = true;
+
+  if (!idVal || rules.some(r => r.id === idVal)) {
+    document.getElementById('errId').classList.add('visible');
+    document.getElementById('addId').classList.add('error');
+    valid = false;
+  } else {
+    document.getElementById('errId').classList.remove('visible');
+    document.getElementById('addId').classList.remove('error');
+  }
+
+  if (!patternVal) {
+    document.getElementById('errPattern').classList.add('visible');
+    document.getElementById('addPattern').classList.add('error');
+    valid = false;
+  } else {
+    document.getElementById('errPattern').classList.remove('visible');
+    document.getElementById('addPattern').classList.remove('error');
+  }
+
+  if (!valid) return;
+
+  const newRule = {
+    id: idVal,
+    pattern: patternVal,
+    weight: weightVal,
+    category: categoryVal,
+    enabled: enabledVal,
+    isDefault: false
+  };
+
+  const resp = await sendMsg('ADD_RULE', { rule: newRule });
+  if (resp && resp.success) {
+    closeModal();
+    await loadRules();
+    showToast('새 룰이 추가되었습니다.', 'success');
+  } else {
+    showToast('룰 추가에 실패했습니다.', 'error');
+  }
+});
+
+// ─────────────────────────────────────────────
+// Toast
+// ─────────────────────────────────────────────
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = type === 'success' ? '✅ ' + message
+                    : type === 'error'   ? '❌ ' + message
+                    : '⚠️ ' + message;
+  container.appendChild(toast);
+  setTimeout(() => { toast.remove(); }, 2000);
+}
+
+// ─────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────
+loadRules();
+</script>
+</body>
+</html>

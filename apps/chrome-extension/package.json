@@ -1,0 +1,11 @@
+{
+  "name": "promptguard-local",
+  "version": "1.0.0",
+  "description": "Zero-Data Exfiltration Wasm Prompt Guard",
+  "scripts": {
+    "build": "asc assembly/index.ts --target release"
+  },
+  "devDependencies": {
+    "assemblyscript": "^0.27.24"
+  }
+}

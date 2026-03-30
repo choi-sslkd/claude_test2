@@ -1,37 +1,37 @@
-import {
-  IsString, IsNotEmpty, IsArray, IsEnum,
-  IsBoolean, IsOptional, IsNumber, Min, ArrayMinSize,
-} from 'class-validator';
+import { IsBoolean, IsEnum, IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RiskLevel } from '@prompt-guard/rule-engine';
+import { RiskLevel } from '@prisma/client';
 
 export class CreateRuleDto {
-  @ApiProperty() @IsString() @IsNotEmpty() name!: string;
-  @ApiProperty() @IsString() @IsNotEmpty() description!: string;
+  @ApiProperty({
+    description: '탐지할 패턴',
+    example: 'act as',
+  })
+  @IsString()
+  @IsNotEmpty()
+  pattern: string;
 
-  @ApiProperty({ enum: ['low', 'medium', 'high'] })
-  @IsEnum(['low', 'medium', 'high'])
-  riskLevel!: RiskLevel;
+  @ApiProperty({
+    description: '위험도',
+    enum: RiskLevel,
+    example: RiskLevel.HIGH,
+  })
+  @IsEnum(RiskLevel)
+  riskLevel: RiskLevel;
 
-  @ApiProperty({ type: [String] })
-  @IsArray() @ArrayMinSize(1)
-  tags!: string[];
+  @ApiProperty({
+    description: '활성화 여부',
+    example: true,
+  })
+  @IsBoolean()
+  enabled: boolean;
 
-  @ApiProperty({ type: [String] })
-  @IsArray() @ArrayMinSize(1)
-  patterns!: string[];
-
-  @ApiPropertyOptional({ type: [String] })
-  @IsArray() @IsOptional()
-  exclusions?: string[];
-
-  @ApiProperty() @IsBoolean() enabled!: boolean;
-
-  @ApiProperty({ default: 100 })
-  @IsNumber() @Min(0)
-  priority!: number;
-
-  @ApiProperty() @IsString() @IsNotEmpty() reasonTemplate!: string;
-
-  @ApiPropertyOptional() @IsString() @IsOptional() rewriteTemplate?: string;
+  @ApiPropertyOptional({
+    description: '룰 버전',
+    example: '1.0.0',
+  })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  version?: string;
 }

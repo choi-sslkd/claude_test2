@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c \"where gh\")",
+      "Bash(pip install:*)",
+      "Bash(python scripts/eval_pattern.py \"jailbreak\" \"act as\" \"ignore previous instructions\" --ts)",
+      "Bash(python scripts/preprocess.py)",
+      "Bash(pkill -f \"scripts/serve.py\")",
+      "Read(//c/Users/choi/Downloads/**)",
+      "Bash(unzip -l \"C:\\\\Users\\\\choi\\\\Downloads\\\\promptguard-feature-core-system.zip\")",
+      "Bash(npm install:*)",
+      "Bash(npx prisma:*)"
+    ]
+  }
+}

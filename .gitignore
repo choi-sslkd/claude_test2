@@ -19,5 +19,8 @@ mlruns/
 node_modules/
 dist/
 
+# OS
+.DS_Store
+
 # Shared
 .env

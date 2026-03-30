@@ -1,14 +1,16 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import appConfig from './config/app.config';
-import { AnalyzeController } from './modules/analyze/analyze.controller';
-import { AnalyzeService } from './modules/analyze/analyze.service';
-import { RulesController } from './modules/rules/rules.controller';
-import { RulesService } from './modules/rules/rules.service';
-import { RulesRepository } from './modules/rules/rules.repository';
+
+import { PrismaModule } from './prisma/prisma.module';
+import { RulesModule } from './modules/rules/rules.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
+
 import { HealthController } from './modules/health/health.controller';
+
 import { AdminGuard } from './common/guards/admin.guard';
+import { AdminAuthController } from './modules/admin-auth/admin-auth.controller';
+import { AdminAuthService } from './modules/admin-auth/admin-auth.service';
 
 @Module({
   imports: [
@@ -16,18 +18,17 @@ import { AdminGuard } from './common/guards/admin.guard';
       isGlobal: true,
       load: [appConfig],
     }),
+    PrismaModule,
     AuditLogModule,
+    RulesModule,
   ],
   controllers: [
-    AnalyzeController,
-    RulesController,
     HealthController,
+    AdminAuthController,
   ],
   providers: [
-    AnalyzeService,
-    RulesService,
-    RulesRepository,
     AdminGuard,
+    AdminAuthService,
   ],
 })
 export class AppModule {}
