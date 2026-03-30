@@ -1,8 +1,7 @@
 // extension/background.js
-import { instantiate } from './build/release.js';
-
 let wasmModule = null;
 let analyzePrompt = null;
+let instantiateFn = null;
 
 const RULES_API_URL = 'http://localhost:3000/admin/rules/active';
 const RULES_REFRESH_MS = 60 * 1000;
@@ -144,12 +143,17 @@ function buildResponseMessage(result, matches) {
 
 async function loadWasmEngine() {
   try {
+    if (!instantiateFn) {
+      const mod = await import('./build/release.js');
+      instantiateFn = mod.instantiate;
+    }
+
     const response = await fetch(chrome.runtime.getURL('build/release.wasm'));
     const buffer = await response.arrayBuffer();
 
     const compiledModule = await WebAssembly.compile(buffer);
 
-    wasmModule = await instantiate(compiledModule, {
+    wasmModule = await instantiateFn(compiledModule, {
       env: {
         abort: () => console.error('Wasm aborted'),
       },

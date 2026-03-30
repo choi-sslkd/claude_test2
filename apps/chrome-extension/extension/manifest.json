@@ -4,8 +4,7 @@
   "version": "1.0",
   "description": "서버 전송 없이 브라우저 내부에서 작동하는 프롬프트 검사기",
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
