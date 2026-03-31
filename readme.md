@@ -637,4 +637,4 @@ taskkill /PID <번호> /F
 
 ## 라이선스
 
-MIT
+MIT.
