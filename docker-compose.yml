@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # Python ML Server (:8001)
+  ml:
+    build:
+      context: .
+      dockerfile: Dockerfile.ml
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    environment:
+      - PG_API_PORT=8001
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # NestJS API Server (:3000)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=file:./dev.db
+      - ML_API_URL=http://ml:8001
+      - PORT=3000
+      - ADMIN_API_KEY=dev-admin-key
+      - NODE_ENV=production
+    depends_on:
+      ml:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/v1/health').then(r => process.exit(r.ok ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # React Admin Web (:5173 -> nginx :80 -> mapped to :5173)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "5173:80"
+    depends_on:
+      - api

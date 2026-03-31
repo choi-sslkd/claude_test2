@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.git/
+.claude/
+data/raw/
+data/processed/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+wandb/
+mlruns/
+.env
+*.onnx
+.DS_Store
