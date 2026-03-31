@@ -17,7 +17,7 @@
     "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^6.19.2",
     "@prompt-guard/rule-engine": "file:../../packages/rule-engine",
-    "axios": "^1.14.0",
+    "axios": "1.14.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.4",
     "reflect-metadata": "^0.1.14",
