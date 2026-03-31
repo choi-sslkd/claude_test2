@@ -1,40 +1,94 @@
 # PromptGuard v2
 
-AI 프롬프트 보안 분석 시스템. OWASP Risk Rating + ML(KNN) 기반으로 프롬프트 인젝션, 탈옥 시도, 데이터 유출, 모호한 요청을 탐지합니다.
+AI 프롬프트 보안 분석 시스템. OWASP Risk Rating + ML(KNN) 기반으로 프롬프트 인젝션, 탈옥 시도, 데이터 유출, 모호한 요청을 탐지하고, 개인정보(PII)를 클라이언트에서 마스킹합니다.
+
+---
+
+## 핵심 특징
+
+- **프롬프트 인젝션 탐지**: ML(KNN) + 패턴 매칭 + OWASP 가중치 조합
+- **개인정보 보호**: PII 검사는 **브라우저에서만** 수행 (서버 전송 없음)
+- **파일 첨부 검사**: ChatGPT 파일 첨부 시 자동으로 PII 스캔 (로컬)
+- **OWASP 기반**: Risk Rating Methodology 공식으로 가중치 자동 계산
+- **관리자 대시보드**: 룰 CRUD + 자동 가중치 + 감사 로그
+
+---
+
+## 프라이버시 아키텍처
+
+```
+┌─ 브라우저 (content.js) ──────────────────────────────────────┐
+│                                                              │
+│  사용자 입력: "내 주민번호는 901231-1234567이야"               │
+│                     │                                        │
+│                     ▼                                        │
+│  [1] PII 검사 (브라우저 내부, 정규식)                          │
+│      → 주민등록번호 1건 감지                                   │
+│      → 마스킹: "내 주민번호는 ******-*******이야"              │
+│                     │                                        │
+│                     ▼                                        │
+│  [2] 마스킹된 텍스트만 서버로 전송                             │
+│      "내 주민번호는 ******-*******이야"                        │
+│                                                              │
+│  원본 개인정보는 브라우저 밖으로 절대 나가지 않음               │
+└──────────────┬───────────────────────────────────────────────┘
+               │ 마스킹된 텍스트만 전송
+               ▼
+┌─ NestJS API (:3000) → Python ML (:8001) ─────────────────────┐
+│  마스킹된 텍스트로 인젝션 ML 검사                              │
+│  → injection: 0.0%, ambiguity: 35%                           │
+│  → overallRisk: LOW → 통과                                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 클라이언트에서 감지하는 PII (9가지)
+
+| 타입 | 예시 | 마스킹 결과 |
+|------|------|-----------|
+| 주민등록번호 | `901231-1234567` | `******-*******` |
+| 여권번호 | `M12345678` | `M********` |
+| 카드번호 | `1234-5678-9012-3456` | `****-****-****-3456` |
+| 전화번호 | `010-1234-5678` | `010-****-****` |
+| 이메일 | `user@gmail.com` | `u***@gmail.com` |
+| IP주소 | `192.168.1.100` | `192.***.***.*0` |
+| API 키 | `sk-abc123456789` | `sk-****************` |
+| AWS 키 | `AKIAIOSFODNN7EXAMPLE` | `AKIA****************` |
+| 비밀번호 | `password=mypass123` | `password=********` |
 
 ---
 
 ## 시스템 구성
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                     PromptGuard v2 아키텍처                      │
-│                                                                │
-│  ┌─────────────┐   ┌──────────────┐   ┌───────────────────┐   │
-│  │  Admin Web   │   │ Chrome 확장   │   │  외부 클라이언트    │   │
-│  │  (React)     │   │ (WASM)       │   │  (curl, etc.)     │   │
-│  │  :5173       │   │              │   │                   │   │
-│  └──────┬───────┘   └──────┬───────┘   └────────┬──────────┘   │
-│         │                  │                     │              │
-│         ▼                  ▼                     ▼              │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │           NestJS API Server (:3000)                     │   │
-│  │  - POST /api/v1/score       (통합 스코어링)              │   │
-│  │  - POST /api/v1/analyze     (패턴 매칭 분석)             │   │
-│  │  - GET/POST /admin/rules    (룰 CRUD + 자동 가중치)      │   │
-│  │  - POST /admin/auth/login   (관리자 인증)                │   │
-│  │  [Prisma + SQLite + OWASP Weight Calculator]            │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                          │                                     │
-│                          ▼                                     │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │           Python FastAPI Server (:8001)                  │   │
-│  │  - POST /v1/score           (ML 추론)                    │   │
-│  │  - POST /v1/batch-score     (배치 추론)                  │   │
-│  │  - POST /v1/score/detailed  (상세 + KNN 이웃)            │   │
-│  │  [KNN + TF-IDF ML Models]                               │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    PromptGuard v2 아키텍처                     │
+│                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐    │
+│  │  Admin Web    │  │ Chrome 확장   │  │ 외부 클라이언트   │    │
+│  │  (React)      │  │ PII: 로컬검사 │  │ (curl, etc.)    │    │
+│  │  :5173        │  │ Inj: 서버API │  │                 │    │
+│  └──────┬────────┘  └──────┬───────┘  └───────┬─────────┘    │
+│         │                  │                   │              │
+│         ▼                  ▼                   ▼              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │          NestJS API Server (:3000)                     │  │
+│  │  - POST /api/v1/score        (통합 스코어링)            │  │
+│  │  - POST /api/v1/scan-file    (파일 스캔)               │  │
+│  │  - POST /api/v1/analyze      (패턴 매칭 분석)           │  │
+│  │  - GET/POST /admin/rules     (룰 CRUD + 자동 가중치)    │  │
+│  │  - POST /admin/auth/login    (관리자 인증)              │  │
+│  │  [Prisma + SQLite + OWASP Weight Calculator]           │  │
+│  └────────────────────────┬───────────────────────────────┘  │
+│                           │                                   │
+│                           ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │          Python FastAPI Server (:8001)                  │  │
+│  │  - POST /v1/score          (ML 추론)                    │  │
+│  │  - POST /v1/batch-score    (배치 추론)                  │  │
+│  │  - POST /v1/score/detailed (상세 + KNN 이웃)            │  │
+│  │  [KNN + TF-IDF ML Models]                              │  │
+│  └────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### 포트 정리
@@ -57,6 +111,8 @@ promptguard-v2/
 │   ├── api/                          # NestJS 백엔드 API
 │   │   ├── src/modules/
 │   │   │   ├── scoring/              # POST /api/v1/score (통합 스코어링)
+│   │   │   ├── file-scan/            # POST /api/v1/scan-file (파일 스캔)
+│   │   │   ├── masking/              # PII 마스킹 서비스
 │   │   │   ├── ml-client/            # Python ML API 호출 클라이언트
 │   │   │   ├── weight-calculator/    # OWASP 가중치 자동 계산
 │   │   │   ├── rules/                # 룰 CRUD + 자동 가중치 연동
@@ -66,7 +122,10 @@ promptguard-v2/
 │   │   │   └── health/               # 헬스체크
 │   │   └── prisma/schema.prisma      # DB 스키마 (OWASP 가중치 컬럼 포함)
 │   └── chrome-extension/             # Chrome 확장 프로그램
-│       └── extension/                # manifest.json, background.js, content.js
+│       └── extension/
+│           ├── content.js            # PII 로컬 검사 + 파일 스캔 + 프롬프트 분석
+│           ├── background.js         # 서버 API 호출 + WASM 폴백
+│           └── manifest.json
 ├── packages/
 │   └── rule-engine/                  # TypeScript 룰 엔진 (공유 라이브러리)
 ├── src/                              # Python ML 백엔드
@@ -74,10 +133,10 @@ promptguard-v2/
 │   ├── inference/scorer.py           # PromptScorer (ML 추론)
 │   ├── rule_engine/rules.py          # Python 룰 엔진
 │   └── api/                          # FastAPI 서버
-├── scripts/                          # CLI 도구 (다운로드, 전처리, 학습, 서버)
+├── scripts/                          # CLI 도구
 ├── config/settings.py                # Python 설정
 ├── requirements.txt                  # Python 의존성
-└── package.json                      # 루트 (테스트 의존성)
+└── package.json
 ```
 
 ---
@@ -106,29 +165,16 @@ promptguard-v2/
 ```bash
 git clone https://github.com/choi-sslkd/claude_test2.git
 cd claude_test2
-git checkout feature/owasp-unified-scoring
+git checkout develop_v5
 ```
 
 ### Step 2. Node.js 의존성 설치
 
 ```bash
-# 루트
 npm install
-
-# TypeScript 룰 엔진
-cd packages/rule-engine
-npm install
-cd ../..
-
-# NestJS API
-cd apps/api
-npm install
-cd ../..
-
-# 관리자 웹
-cd apps/web
-npm install
-cd ../..
+cd packages/rule-engine && npm install && cd ../..
+cd apps/api && npm install && cd ../..
+cd apps/web && npm install && cd ../..
 ```
 
 ### Step 3. Python 의존성 설치
@@ -156,10 +202,9 @@ npx prisma db push --schema prisma/schema.prisma
 
 #### Prisma .env 인식 못하는 문제 해결
 
-`prisma.config.ts` 파일이 있으면 Prisma가 `.env`를 무시하고 자체 설정을 사용합니다.
-이때 `DATABASE_URL` 환경변수를 직접 설정해야 합니다.
+`prisma.config.ts` 파일이 있으면 Prisma가 `.env`를 무시합니다.
 
-**CMD (명령 프롬프트):**
+**CMD:**
 ```cmd
 set DATABASE_URL=file:./dev.db
 npx prisma generate
@@ -173,20 +218,13 @@ npx prisma generate
 npx prisma db push --schema prisma/schema.prisma
 ```
 
-**해결 안 될 경우 - prisma.config.ts 삭제:**
+**그래도 안 되면:**
 ```bash
 del prisma.config.ts
 npx prisma generate
 npx prisma db push --schema prisma/schema.prisma
 ```
 
-**확인:**
-```bash
-# dev.db 파일이 생성되었는지 확인
-dir *.db
-```
-
-정상이면 `dev.db` 파일이 보입니다. 이후 프로젝트 루트로 돌아갑니다:
 ```bash
 cd ../..
 ```
@@ -194,272 +232,71 @@ cd ../..
 ### Step 5. ML 모델 학습 (최초 1회, 약 2~5분)
 
 ```bash
-# 1. 데이터 다운로드 (7개 데이터셋, ~25K 샘플)
 python scripts/download_data.py
-
-# 2. 전처리 (Parquet 분할)
 python scripts/preprocess.py
-
-# 3. KNN 모델 학습
 python scripts/train.py -t all -m knn
-```
-
-학습 완료 후 `models/` 폴더에 모델 파일이 생성됩니다:
-```
-models/
-├── injection/knn/pipeline.joblib
-├── ambiguity/knn/pipeline.joblib
-└── training_results.json
 ```
 
 ---
 
 ## 실행 방법
 
-**터미널 3개를 열어서 각각 실행합니다:**
+**터미널 3개:**
 
-### 터미널 1: Python ML 서버 (:8001)
 ```bash
+# 터미널 1: Python ML 서버
 python scripts/serve.py --port 8001
-```
-확인: http://localhost:8001/docs (Swagger UI)
 
-### 터미널 2: NestJS API 서버 (:3000)
-```bash
-cd apps/api
-npm run dev
-```
-확인: http://localhost:3000/docs (Swagger UI)
+# 터미널 2: NestJS API
+cd apps/api && npm run dev
 
-### 터미널 3: 관리자 웹 (:5173)
-```bash
-cd apps/web
-npm run dev
+# 터미널 3: 관리자 웹
+cd apps/web && npm run dev
 ```
-확인: http://localhost:5173
 
-**관리자 로그인:**
-- URL: http://localhost:5173/admin/login
+**관리자 로그인:** http://localhost:5173/admin/login
 - 이메일: `admin@promptguard.com`
 - 비밀번호: `admin1234`
 
 ---
 
-## 테스트 방법 (하나하나 상세)
+## 데이터 흐름 상세
 
-### 테스트 1: TypeScript 룰 엔진 단위 테스트
+### 프롬프트 입력 시
 
-```bash
-cd packages/rule-engine
-npm test
+```
+1. 사용자가 ChatGPT에 타이핑
+2. content.js가 keyup 이벤트 감지 (400ms 디바운스)
+3. [브라우저] PII 정규식 검사 → 개인정보 감지 시 마스킹
+4. [서버전송] 마스킹된 텍스트만 → NestJS → Python ML
+5. [서버응답] injection %, ambiguity %, overallRisk
+6. [브라우저] PII 결과 + 서버 결과 합쳐서 알림 표시
+7. Enter 시: HIGH/CRITICAL → 차단, 그 외 → 통과
 ```
 
-**예상 결과:**
+### 파일 첨부 시
+
 ```
-PASS test/engine.spec.ts
-  RuleEngine
-    √ 이전 규칙 무시 → high
-    √ 인증 없이 파일 업로드 → medium 이상
-    √ 일반적인 질문 → low, 매칭 없음
-    √ 복합 위험 프롬프트 → 여러 룰 매칭
-Tests: 4 passed, 4 total
-```
-
----
-
-### 테스트 2: NestJS API E2E 테스트
-
-**사전 조건:** `apps/api/.env`에 `DATABASE_URL="file:./dev.db"` 필요
-
-```bash
-cd apps/api
-npx jest --config jest.config.js
+1. 사용자가 ChatGPT에 파일 첨부
+2. content.js가 file input change 이벤트 감지
+3. [브라우저] FileReader로 텍스트 읽기
+4. [브라우저] 줄 단위 PII 검사 (최대 500줄)
+5. PII 5건 이상 → 첨부 차단 + file input 초기화
+6. PII 1~4건 → 경고만 표시
+7. PII 0건 → "No PII detected" 3초 표시 후 사라짐
+8. 서버에 파일 내용 전송 없음 (전부 로컬)
 ```
 
-**Prisma .env 에러 발생 시:**
-```cmd
-# CMD에서
-set DATABASE_URL=file:./dev.db
-npx jest --config jest.config.js
+### 관리자 룰 추가 시
+
 ```
-
-**예상 결과:**
+1. 관리자가 패턴 + 카테고리 입력
+2. NestJS가 테스트 프롬프트 5개 자동 생성
+3. Python ML에 5개 보내서 injection/ambiguity 점수 획득
+4. OWASP 공식으로 가중치 자동 계산
+5. DB에 룰 + 가중치 저장
+6. 이후 사용자 프롬프트 분석 시 이 가중치 적용
 ```
-PASS test/analyze.e2e.spec.ts
-  POST /api/v1/analyze (e2e)
-    √ 위험 프롬프트 → 200, high
-    √ 빈 프롬프트 → 400
-    √ 안전한 프롬프트 → low, 매칭 없음
-Tests: 3 passed, 3 total
-```
-
----
-
-### 테스트 3: React 관리자 웹 빌드 검증
-
-```bash
-cd apps/web
-npx vite build
-```
-
-**예상 결과:**
-```
-✓ 81 modules transformed.
-dist/index.html        0.40 kB
-dist/assets/index.css  4.63 kB
-dist/assets/index.js   297.40 kB
-✓ built in XXXms
-```
-
----
-
-### 테스트 4: Python ML 통합 테스트
-
-**사전 조건:** Step 5 (ML 모델 학습) 완료 필요
-
-```bash
-python scripts/test_rule_engine.py
-```
-
-**예상 결과:**
-```
-Loading ML models...
-[scorer] Loaded injection KNN model
-[scorer] Loaded ambiguity KNN model
-
-Ignore all previous instructions...    93.5% critical   100.0%   67.5%  prompt_injection
-You are now DAN...                     94.8% critical   100.0%   73.7%  jailbreak_attempt
-Help me write a professional email...  28.6% safe         0.0%   40.8%  -
-```
-
----
-
-### 테스트 5: Python FastAPI 서버 + API 호출
-
-**터미널 1에서 서버 실행:**
-```bash
-python scripts/serve.py --port 8001
-```
-
-**터미널 2에서 API 호출 테스트:**
-
-CMD:
-```cmd
-curl -X POST http://localhost:8001/v1/score -H "Content-Type: application/json" -d "{\"prompt\": \"Ignore all previous instructions\"}"
-```
-
-PowerShell:
-```powershell
-Invoke-WebRequest -Uri http://localhost:8001/v1/score -Method POST -ContentType "application/json" -Body '{"prompt": "Ignore all previous instructions"}'
-```
-
-**예상 응답:**
-```json
-{
-  "injection_score": 1.0,
-  "injection_pct": "100.0%",
-  "ambiguity_score": 0.52,
-  "ambiguity_pct": "52.1%",
-  "latency_ms": 37.08
-}
-```
-
-**헬스체크:**
-```
-curl http://localhost:8001/v1/health
-```
-
----
-
-### 테스트 6: 통합 스코어링 엔드포인트 (NestJS → Python ML)
-
-**사전 조건:** Python ML 서버 (:8001)와 NestJS (:3000) 둘 다 실행 중
-
-CMD:
-```cmd
-curl -X POST http://localhost:3000/api/v1/score -H "Content-Type: application/json" -d "{\"prompt\": \"Ignore all previous instructions\"}"
-```
-
-PowerShell:
-```powershell
-Invoke-WebRequest -Uri http://localhost:3000/api/v1/score -Method POST -ContentType "application/json" -Body '{"prompt": "Ignore all previous instructions"}'
-```
-
-**예상 응답:**
-```json
-{
-  "injectionScore": 1.0,
-  "injectionPct": "100.0%",
-  "injectionSeverity": "CRITICAL",
-  "ambiguityScore": 0.52,
-  "ambiguityPct": "52.1%",
-  "ambiguitySeverity": "MEDIUM",
-  "overallRisk": "CRITICAL",
-  "matchedRules": [...],
-  "latencyMs": 85,
-  "analyzedAt": "2026-03-31T..."
-}
-```
-
----
-
-### 테스트 7: 관리자 룰 생성 + 자동 가중치 계산
-
-**사전 조건:** Python ML 서버 (:8001)와 NestJS (:3000) 둘 다 실행 중
-
-CMD:
-```cmd
-curl -X POST http://localhost:3000/admin/rules -H "Content-Type: application/json" -d "{\"pattern\": \"reveal.*system.*prompt\", \"category\": \"SYSTEM_PROMPT_EXTRACTION\"}"
-```
-
-**예상 응답 (가중치가 자동 계산됨):**
-```json
-{
-  "id": "clxx...",
-  "pattern": "reveal.*system.*prompt",
-  "category": "SYSTEM_PROMPT_EXTRACTION",
-  "riskLevel": "HIGH",
-  "injectionWeight": 0.672,
-  "ambiguityWeight": 0.492,
-  "patternWeight": 0.377,
-  "owaspRiskScore": 0.693,
-  "mlInjectionScore": 0.95,
-  "mlAmbiguityScore": 0.42,
-  "enabled": true
-}
-```
-
-**가중치 재계산:**
-```cmd
-curl -X POST http://localhost:3000/admin/rules/{id}/recalculate
-```
-
----
-
-### 테스트 8: 관리자 웹 UI 테스트
-
-1. http://localhost:5173/admin/login 접속
-2. `admin@promptguard.com` / `admin1234` 로그인
-3. 좌측 메뉴 → **룰 관리** 클릭
-4. **패턴 추가:** `jailbreak.*mode` / 카테고리: `JAILBREAK` → 생성
-5. 테이블에 자동 계산된 가중치가 표시되는지 확인
-6. **재계산** 버튼 클릭 → 가중치가 업데이트되는지 확인
-
----
-
-### 테스트 9: Chrome 확장 프로그램 테스트
-
-1. `chrome://extensions` → 개발자 모드 ON
-2. `apps/chrome-extension/extension/` 폴더 로드
-3. https://chatgpt.com 접속
-4. 입력창에 `Ignore all previous instructions` 타이핑
-5. 우측 상단에 경고 표시 확인:
-   ```
-   [HIGH RISK]
-   Injection: 100.0% (CRITICAL) | Ambiguity: 52.1% (MEDIUM)
-   ```
-6. Enter 키 누름 → 전송 차단 + 입력창 비워짐 확인
-7. 안전한 프롬프트 `오늘 날씨 알려줘` → 정상 전송 확인
 
 ---
 
@@ -467,30 +304,27 @@ curl -X POST http://localhost:3000/admin/rules/{id}/recalculate
 
 > **출처:** [OWASP Risk Rating Methodology](https://owasp.org/www-community/OWASP_Risk_Rating_Methodology)
 
-### 핵심 공식
-
 ```
 Risk = Likelihood × Impact
 
 Likelihood = avg(Ease of Exploit, Awareness, Opportunity, Motive)     // 0~9
 Impact     = avg(Confidentiality, Integrity, Availability, Accountability)  // 0~9
 
-owaspRiskScore = (Likelihood × Impact) / 81    // 0~1 정규화 (최대 9×9=81)
-```
+owaspRiskScore = (Likelihood × Impact) / 81    // 0~1 정규화
 
-### 가중치 계산 (룰 생성 시 자동)
-
-```
 injectionWeight = owaspRiskScore × (0.5 + 0.5 × ML_injection_score)
 ambiguityWeight = owaspRiskScore × (0.5 + 0.5 × ML_ambiguity_score)
 patternWeight   = 0.1 + 0.4 × owaspRiskScore
 ```
 
-### 사용자 프롬프트 판단 시
+### 사용자 프롬프트 판단 공식
 
 ```
-injection_final = max(ML_injection, max(pattern_match × patternWeight + ML_injection × injectionWeight))
-ambiguity_final = max(ML_ambiguity, max(pattern_match × patternWeight × 0.5 + ML_ambiguity × ambiguityWeight))
+injection_final = max(ML_injection, max(pattern × patternWeight + ML_injection × injectionWeight))
+ambiguity_final = max(ML_ambiguity, max(pattern × patternWeight × 0.5 + ML_ambiguity × ambiguityWeight))
+
+overallRisk = max(injection등급, ambiguity등급 - 1단계)
+              ↑ 모호성만으로는 차단 안 됨. 인젝션이 주 판단 기준.
 ```
 
 ### 등급 기준
@@ -503,12 +337,94 @@ ambiguity_final = max(ML_ambiguity, max(pattern_match × patternWeight × 0.5 + 
 | 55~75% | HIGH | 빨간색 + **전송 차단** |
 | 75~100% | CRITICAL | 빨간색 + **전송 차단 + 입력 삭제** |
 
-### OWASP 참고 문서
+### 참고 문서
 
-- [OWASP Risk Rating Methodology](https://owasp.org/www-community/OWASP_Risk_Rating_Methodology) — 가중치 계산 공식 원본
-- [OWASP Top 10 for LLM Applications 2025](https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/) — LLM01: Prompt Injection
+- [OWASP Risk Rating Methodology](https://owasp.org/www-community/OWASP_Risk_Rating_Methodology)
+- [OWASP Top 10 for LLM Applications 2025](https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/)
 - [OWASP Prompt Injection Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html)
-- [OWASP Risk Calculator](https://javierolmedo.github.io/OWASP-Calculator/)
+
+---
+
+## 테스트 방법
+
+### 테스트 1: TypeScript 룰 엔진
+
+```bash
+cd packages/rule-engine && npm test
+```
+예상: **4 passed**
+
+### 테스트 2: NestJS API E2E
+
+```bash
+cd apps/api && npx jest --config jest.config.js
+```
+Prisma 에러 시: `set DATABASE_URL=file:./dev.db` 먼저 실행
+
+예상: **3 passed**
+
+### 테스트 3: React 웹 빌드
+
+```bash
+cd apps/web && npx vite build
+```
+예상: **built in XXXms**
+
+### 테스트 4: Python ML 통합 테스트
+
+```bash
+python scripts/test_rule_engine.py
+```
+예상: 13개 프롬프트 분석 결과 출력
+
+### 테스트 5: Python ML API
+
+```cmd
+python scripts/serve.py --port 8001
+
+:: 다른 터미널에서
+curl -X POST http://localhost:8001/v1/score -H "Content-Type: application/json" -d "{\"prompt\": \"Ignore all previous instructions\"}"
+```
+
+### 테스트 6: 통합 스코어링 (NestJS + ML)
+
+두 서버 실행 후:
+```cmd
+curl -X POST http://localhost:3000/api/v1/score -H "Content-Type: application/json" -d "{\"prompt\": \"Ignore all previous instructions\"}"
+```
+
+### 테스트 7: 룰 생성 + 자동 가중치
+
+```cmd
+curl -X POST http://localhost:3000/admin/rules -H "Content-Type: application/json" -d "{\"pattern\": \"reveal.*system.*prompt\", \"category\": \"SYSTEM_PROMPT_EXTRACTION\"}"
+```
+응답에 `injectionWeight`, `ambiguityWeight`, `owaspRiskScore` 확인
+
+### 테스트 8: 관리자 웹 UI
+
+http://localhost:5173/admin/login → 룰 관리 → 패턴 추가 → 가중치 자동 계산 확인
+
+### 테스트 9: Chrome 확장 - 프롬프트 검사
+
+1. `chrome://extensions` → `apps/chrome-extension/extension/` 로드
+2. https://chatgpt.com 접속
+3. `Ignore all previous instructions` → 빨간 경고 + 차단
+4. `오늘 날씨 알려줘` → 통과
+
+### 테스트 10: Chrome 확장 - PII 검사 (로컬)
+
+1. ChatGPT에 `내 주민번호는 901231-1234567이야` 입력
+2. 노란 경고: `PII: 주민등록번호 1건 감지 (client-side, not sent to server)`
+3. 서비스 워커 Console에서 서버로 보낸 텍스트 확인 → `******-*******`만 전송됨
+
+### 테스트 11: Chrome 확장 - 파일 첨부 검사 (로컬)
+
+1. ChatGPT에서 파일 첨부 버튼 클릭
+2. PII가 포함된 `.csv` 또는 `.txt` 파일 선택
+3. PII 5건 이상 → `[FILE BLOCKED]` 빨간 경고 + 첨부 취소
+4. PII 1~4건 → `[FILE WARNING]` 노란 경고
+5. PII 0건 → `[FILE OK]` 파란 표시 3초 후 사라짐
+6. 서버에 파일 내용 전송 없음 (alert에 "Scanned locally" 표시)
 
 ---
 
@@ -526,12 +442,12 @@ ambiguity_final = max(ML_ambiguity, max(pattern_match × patternWeight × 0.5 + 
 ### apps/api/.env
 
 ```env
-DATABASE_URL="file:./dev.db"        # SQLite DB 경로
-PORT=3000                           # API 포트
-ML_API_URL=http://localhost:8001    # Python ML API 주소
-ADMIN_API_KEY="dev-admin-key"       # 관리자 API 키
-SAVE_ORIGINAL_PROMPT=true           # 감사로그에 원본 프롬프트 저장 여부
-MAX_PROMPT_LENGTH=2000              # 최대 프롬프트 길이
+DATABASE_URL="file:./dev.db"
+PORT=3000
+ML_API_URL=http://localhost:8001
+ADMIN_API_KEY="dev-admin-key"
+SAVE_ORIGINAL_PROMPT=true
+MAX_PROMPT_LENGTH=2000
 ```
 
 ---
@@ -545,59 +461,30 @@ MAX_PROMPT_LENGTH=2000              # 최대 프롬프트 길이
 | **ML 추론** | Python 3.10+, FastAPI, scikit-learn, TF-IDF + KNN |
 | **ML 학습** | PyTorch, Transformers, 7개 공개 데이터셋 |
 | **크롬 확장** | Manifest V3, WebAssembly (AssemblyScript) |
-| **룰 엔진** | TypeScript (공유 패키지), Python (ML 가중치 통합) |
-| **보안 프레임워크** | OWASP Risk Rating Methodology, OWASP LLM Top 10 2025 |
+| **PII 마스킹** | 클라이언트 정규식 (서버 전송 없음) |
+| **보안 프레임워크** | OWASP Risk Rating, OWASP LLM Top 10 2025 |
 | **테스트** | Jest, Supertest |
 
 ---
 
 ## 트러블슈팅
 
-### Prisma "DATABASE_URL not found" 에러
+### Prisma "DATABASE_URL not found"
 
-```
-Error: Environment variable not found: DATABASE_URL
-```
-
-**원인:** `prisma.config.ts`가 `.env` 로딩을 건너뜀
-
-**해결 1 - 환경변수 직접 설정:**
+`prisma.config.ts`가 `.env`를 건너뜀. 환경변수 직접 설정:
 ```cmd
-# CMD
 set DATABASE_URL=file:./dev.db
 npx prisma db push --schema prisma/schema.prisma
 ```
 
-```powershell
-# PowerShell
-$env:DATABASE_URL="file:./dev.db"
-npx prisma db push --schema prisma/schema.prisma
-```
+### PowerShell npm 보안 에러
 
-**해결 2 - prisma.config.ts 삭제:**
-```bash
-del prisma.config.ts
-npx prisma db push --schema prisma/schema.prisma
-```
-
-### npm 실행 시 PowerShell 보안 에러
-
-```
-npm.ps1 파일을 로드할 수 없습니다
-```
-
-**해결:**
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-### Python ML 서버 포트 충돌
+### 포트 충돌
 
-```
-[Errno 10048] 각 소켓 주소는 하나만 사용할 수 있습니다
-```
-
-**해결:** 다른 프로세스가 8001 포트를 사용 중. 확인 후 종료:
 ```cmd
 netstat -ano | findstr :8001
 taskkill /PID <번호> /F
@@ -605,11 +492,7 @@ taskkill /PID <번호> /F
 
 ### Chrome 확장 Service Worker 에러
 
-```
-Service worker registration failed. Status code: 3
-```
-
-**해결:** `chrome://extensions`에서 확장 **새로고침** 버튼 클릭
+`chrome://extensions` → 확장 새로고침 버튼 클릭
 
 ---
 
