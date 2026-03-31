@@ -153,10 +153,7 @@ export default function AdminRulesPage() {
 
       const response = await fetch(`${API_BASE_URL}/admin/rules`, {
         method: 'POST',
-        headers: {
-          ...adminHeaders({ 'Content-Type': 'application/json' }),
-        },
-        headers: adminHeaders(),
+        headers: adminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           pattern: form.pattern.trim(),
           category: form.category,
@@ -208,10 +205,7 @@ export default function AdminRulesPage() {
 
       const response = await fetch(`${API_BASE_URL}/admin/rules/${id}`, {
         method: 'PATCH',
-        headers: {
-          ...adminHeaders({ 'Content-Type': 'application/json' }),
-        },
-        headers: adminHeaders(),
+        headers: adminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           pattern: editForm.pattern.trim(),
           category: editForm.category,
@@ -274,10 +268,7 @@ export default function AdminRulesPage() {
     try {
       const response = await fetch(`${API_BASE_URL}/admin/rules/${rule.id}`, {
         method: 'PATCH',
-        headers: {
-          ...adminHeaders({ 'Content-Type': 'application/json' }),
-        },
-        headers: adminHeaders(),
+        headers: adminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           enabled: !rule.enabled,
         }),
