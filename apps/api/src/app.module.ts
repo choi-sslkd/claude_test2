@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import appConfig from './config/app.config';
 
 import { PrismaModule } from './prisma/prisma.module';
@@ -21,6 +23,11 @@ import { AdminAuthService } from './modules/admin-auth/admin-auth.service';
       isGlobal: true,
       load: [appConfig],
     }),
+    // Rate limiting: 1분에 60회 (로그인은 컨트롤러에서 별도 제한)
+    ThrottlerModule.forRoot([{
+      ttl: 60000,
+      limit: 60,
+    }]),
     PrismaModule,
     AuditLogModule,
     RulesModule,
@@ -35,6 +42,11 @@ import { AdminAuthService } from './modules/admin-auth/admin-auth.service';
   providers: [
     AdminGuard,
     AdminAuthService,
+    // 글로벌 Rate Limiting 적용
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}

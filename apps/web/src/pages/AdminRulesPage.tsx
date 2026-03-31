@@ -33,6 +33,11 @@ type RuleForm = {
 };
 
 const API_BASE_URL = 'http://localhost:3000';
+const ADMIN_KEY = 'dev-admin-key';
+
+function adminHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { 'x-admin-key': ADMIN_KEY, ...extra };
+}
 
 const CATEGORIES: Category[] = [
   'PROMPT_INJECTION',
@@ -99,7 +104,7 @@ export default function AdminRulesPage() {
 
       const response = await fetch(`${API_BASE_URL}/admin/rules`, {
         method: 'GET',
-        credentials: 'include',
+        headers: adminHeaders(),
       });
 
       if (!response.ok) {
@@ -149,9 +154,9 @@ export default function AdminRulesPage() {
       const response = await fetch(`${API_BASE_URL}/admin/rules`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          ...adminHeaders({ 'Content-Type': 'application/json' }),
         },
-        credentials: 'include',
+        headers: adminHeaders(),
         body: JSON.stringify({
           pattern: form.pattern.trim(),
           category: form.category,
@@ -204,9 +209,9 @@ export default function AdminRulesPage() {
       const response = await fetch(`${API_BASE_URL}/admin/rules/${id}`, {
         method: 'PATCH',
         headers: {
-          'Content-Type': 'application/json',
+          ...adminHeaders({ 'Content-Type': 'application/json' }),
         },
-        credentials: 'include',
+        headers: adminHeaders(),
         body: JSON.stringify({
           pattern: editForm.pattern.trim(),
           category: editForm.category,
@@ -243,7 +248,7 @@ export default function AdminRulesPage() {
 
       const response = await fetch(`${API_BASE_URL}/admin/rules/${id}`, {
         method: 'DELETE',
-        credentials: 'include',
+        headers: adminHeaders(),
       });
 
       if (!response.ok) {
@@ -270,9 +275,9 @@ export default function AdminRulesPage() {
       const response = await fetch(`${API_BASE_URL}/admin/rules/${rule.id}`, {
         method: 'PATCH',
         headers: {
-          'Content-Type': 'application/json',
+          ...adminHeaders({ 'Content-Type': 'application/json' }),
         },
-        credentials: 'include',
+        headers: adminHeaders(),
         body: JSON.stringify({
           enabled: !rule.enabled,
         }),
@@ -299,7 +304,7 @@ export default function AdminRulesPage() {
 
       const response = await fetch(`${API_BASE_URL}/admin/rules/${id}/recalculate`, {
         method: 'POST',
-        credentials: 'include',
+        headers: adminHeaders(),
       });
 
       if (!response.ok) {

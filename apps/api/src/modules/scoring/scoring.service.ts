@@ -52,8 +52,13 @@ export class ScoringService {
     }
 
     // 4. Clamp and classify
-    const injectionScore = Math.min(Math.max(maxInjection, 0), 1);
-    const ambiguityScore = Math.min(Math.max(maxAmbiguity, 0), 1);
+    // 패턴 매칭이 하나도 안 된 경우, ML 단독 점수를 20% 할인
+    // (ML 오탐지 보정: 안전한 프롬프트가 ML만으로 HIGH가 되는 것 방지)
+    const noPatternMatch = matchedRules.length === 0;
+    const discountFactor = noPatternMatch ? 0.8 : 1.0;
+
+    const injectionScore = Math.min(Math.max(maxInjection * discountFactor, 0), 1);
+    const ambiguityScore = Math.min(Math.max(maxAmbiguity * discountFactor, 0), 1);
 
     const injectionSeverity = riskScoreToLevel(injectionScore);
     const ambiguitySeverity = riskScoreToLevel(ambiguityScore);
