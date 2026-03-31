@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     val_ratio: float = 0.1
     test_ratio: float = 0.1
 
-    model_config = {"env_prefix": "PG_", "env_file": ".env"}
+    model_config = {"env_prefix": "PG_", "env_file": ".env", "extra": "ignore"}
 
 
 @lru_cache
