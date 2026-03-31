@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class MatchedRuleResponse {
   @ApiProperty() ruleId: string;
@@ -6,6 +6,14 @@ export class MatchedRuleResponse {
   @ApiProperty() category: string;
   @ApiProperty() injectionContribution: number;
   @ApiProperty() ambiguityContribution: number;
+}
+
+export class MaskingResponse {
+  @ApiProperty() hasPII: boolean;
+  @ApiProperty() maskedCount: number;
+  @ApiProperty() types: string[];
+  @ApiProperty() summary: string;
+  @ApiPropertyOptional() maskedPrompt?: string;
 }
 
 export class ScoreResponseDto {
@@ -23,6 +31,9 @@ export class ScoreResponseDto {
 
   @ApiProperty({ type: [MatchedRuleResponse] })
   matchedRules: MatchedRuleResponse[];
+
+  @ApiProperty({ type: MaskingResponse })
+  masking: MaskingResponse;
 
   @ApiProperty() latencyMs: number;
   @ApiProperty() analyzedAt: string;

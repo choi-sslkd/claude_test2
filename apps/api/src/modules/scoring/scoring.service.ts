@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MlClientService } from '../ml-client/ml-client.service';
+import { MaskingService } from '../masking/masking.service';
 import { riskScoreToLevel } from '../weight-calculator/owasp-factors';
 import { ScoreResponseDto, MatchedRuleResponse } from './dto/score-response.dto';
 
@@ -9,10 +10,14 @@ export class ScoringService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mlClient: MlClientService,
+    private readonly maskingService: MaskingService,
   ) {}
 
   async score(prompt: string): Promise<ScoreResponseDto> {
     const start = Date.now();
+
+    // 0. PII 마스킹
+    const maskResult = this.maskingService.mask(prompt);
 
     // 1. Fetch active rules with weights
     const rules = await this.prisma.rule.findMany({ where: { enabled: true } });
@@ -31,12 +36,7 @@ export class ScoringService {
       const patternHit = this.matchPattern(normalizedPrompt, rule.pattern);
       if (!patternHit) continue;
 
-      // Injection contribution:
-      //   pattern_match(1) × patternWeight + ml_injection × injectionWeight
       const injContrib = 1.0 * rule.patternWeight + ml.injection_score * rule.injectionWeight;
-
-      // Ambiguity contribution:
-      //   pattern_match(1) × patternWeight × 0.5 + ml_ambiguity × ambiguityWeight
       const ambContrib = 1.0 * rule.patternWeight * 0.5 + ml.ambiguity_score * rule.ambiguityWeight;
 
       maxInjection = Math.max(maxInjection, Math.min(injContrib, 1.0));
@@ -58,16 +58,14 @@ export class ScoringService {
     const injectionSeverity = riskScoreToLevel(injectionScore);
     const ambiguitySeverity = riskScoreToLevel(ambiguityScore);
 
-    // Overall = injection이 주 판단 기준, ambiguity는 참고용
-    // 차단은 injection이 HIGH 이상일 때만 발생
-    // ambiguity는 한 단계 낮춰서 반영 (HIGH→MEDIUM, CRITICAL→HIGH)
+    // Overall = injection 기준, ambiguity는 한 단계 낮춰서 반영
     const severityOrder = ['NOTE', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     const injIdx = severityOrder.indexOf(injectionSeverity);
-    const ambIdx = Math.max(severityOrder.indexOf(ambiguitySeverity) - 1, 0); // 한 단계 낮춤
+    const ambIdx = Math.max(severityOrder.indexOf(ambiguitySeverity) - 1, 0);
     const overallRisk = severityOrder[Math.max(injIdx, ambIdx)];
 
     return {
-      prompt,
+      prompt: maskResult.hasPII ? maskResult.maskedPrompt : prompt,
       injectionScore: Math.round(injectionScore * 10000) / 10000,
       injectionPct: `${(injectionScore * 100).toFixed(1)}%`,
       injectionSeverity,
@@ -76,6 +74,13 @@ export class ScoringService {
       ambiguitySeverity,
       overallRisk,
       matchedRules,
+      masking: {
+        hasPII: maskResult.hasPII,
+        maskedCount: maskResult.matches.length,
+        types: [...new Set(maskResult.matches.map((m) => m.type))],
+        summary: maskResult.summary,
+        maskedPrompt: maskResult.hasPII ? maskResult.maskedPrompt : undefined,
+      },
       latencyMs: Date.now() - start,
       analyzedAt: new Date().toISOString(),
     };
@@ -85,7 +90,6 @@ export class ScoringService {
     try {
       return new RegExp(pattern, 'i').test(text);
     } catch {
-      // If pattern is not valid regex, do substring match
       return text.includes(pattern.toLowerCase());
     }
   }

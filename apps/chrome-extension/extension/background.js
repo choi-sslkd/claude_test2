@@ -330,6 +330,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           overallRisk: serverResult.overallRisk,
           blocked,
           matches: serverResult.matchedRules || [],
+          masking: serverResult.masking || { hasPII: false, maskedCount: 0, summary: '' },
           message: blocked
             ? `Injection: ${serverResult.injectionPct} | Ambiguity: ${serverResult.ambiguityPct}`
             : `Injection: ${serverResult.injectionPct} | Ambiguity: ${serverResult.ambiguityPct}`,

@@ -83,19 +83,27 @@ function normalizeResponse(response) {
   const injSev = (response.injectionSeverity || 'note').toUpperCase();
   const ambSev = (response.ambiguitySeverity || 'note').toUpperCase();
   const matches = response.matches || [];
+  const masking = response.masking || { hasPII: false, maskedCount: 0, summary: '' };
 
-  return { overallRisk, blocked, injPct, ambPct, injSev, ambSev, matches };
+  return { overallRisk, blocked, injPct, ambPct, injSev, ambSev, matches, masking };
+}
+
+function buildMaskingLine(masking) {
+  if (!masking || !masking.hasPII) return '';
+  return `\nPII Masked: ${masking.summary}`;
 }
 
 function buildAlertMessage(r, isSubmit = false) {
   const matchText = r.matches.length > 0
     ? r.matches.map((m) => `"${m.pattern || m.id}"`).join(', ')
     : '';
+  const maskLine = buildMaskingLine(r.masking);
 
   if (r.blocked || r.overallRisk === 'critical') {
     let text = `[BLOCKED / ${r.overallRisk.toUpperCase()}]\n`;
     text += `Injection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
     if (matchText) text += `\nMatched: ${matchText}`;
+    text += maskLine;
     return { type: 'danger', text };
   }
 
@@ -103,6 +111,7 @@ function buildAlertMessage(r, isSubmit = false) {
     let text = `[HIGH RISK]\n`;
     text += `Injection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
     if (matchText) text += `\nMatched: ${matchText}`;
+    text += maskLine;
     return { type: isSubmit ? 'danger' : 'warning', text };
   }
 
@@ -110,15 +119,22 @@ function buildAlertMessage(r, isSubmit = false) {
     let text = `[MEDIUM]\n`;
     text += `Injection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
     if (matchText) text += `\nMatched: ${matchText}`;
+    text += maskLine;
     return { type: 'warning', text };
   }
 
   if (r.overallRisk === 'low') {
     let text = `[LOW]\nInjection: ${r.injPct} | Ambiguity: ${r.ambPct}`;
+    text += maskLine;
     return { type: 'info', text };
   }
 
-  return null; // note level — no alert
+  // note level - only show if PII detected
+  if (r.masking && r.masking.hasPII) {
+    return { type: 'warning', text: `[PII DETECTED]${maskLine}` };
+  }
+
+  return null;
 }
 
 let debounceTimer = null;

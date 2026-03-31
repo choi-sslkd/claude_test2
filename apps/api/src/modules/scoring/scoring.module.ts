@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { MlClientModule } from '../ml-client/ml-client.module';
+import { MaskingModule } from '../masking/masking.module';
 import { ScoringController } from './scoring.controller';
 import { ScoringService } from './scoring.service';
 
 @Module({
-  imports: [PrismaModule, MlClientModule],
+  imports: [PrismaModule, MlClientModule, MaskingModule],
   controllers: [ScoringController],
   providers: [ScoringService],
 })
