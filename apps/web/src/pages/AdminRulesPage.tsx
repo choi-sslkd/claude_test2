@@ -21,7 +21,7 @@ type Rule = {
   enabled: boolean;
   injectionWeight?: number;
   ambiguityWeight?: number;
-  owaspRisk?: string;
+  owaspRiskScore?: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -539,7 +539,7 @@ export default function AdminRulesPage() {
                         </td>
 
                         <td style={styles.td}>
-                          <span style={styles.owaspLabel}>{rule.owaspRisk ?? '-'}</span>
+                          <span style={styles.owaspLabel}>{rule.owaspRiskScore ?? '-'}</span>
                         </td>
 
                         <td style={styles.td}>
