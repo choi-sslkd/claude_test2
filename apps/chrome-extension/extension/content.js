@@ -137,6 +137,144 @@ function buildAlertMessage(r, isSubmit = false) {
   return null;
 }
 
+// ─── File attachment interception ────────────────────────────
+
+const SCANNABLE_TYPES = [
+  'text/plain', 'text/csv', 'text/tab-separated-values',
+  'application/json', 'text/markdown', 'text/html',
+  'application/xml', 'text/xml', 'text/yaml',
+];
+const SCANNABLE_EXTENSIONS = [
+  '.txt', '.csv', '.tsv', '.json', '.jsonl', '.md',
+  '.html', '.xml', '.yaml', '.yml', '.log', '.env', '.py', '.js', '.ts',
+];
+
+function isScannableFile(file) {
+  if (SCANNABLE_TYPES.includes(file.type)) return true;
+  const ext = '.' + file.name.split('.').pop().toLowerCase();
+  return SCANNABLE_EXTENSIONS.includes(ext);
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('File read failed'));
+    reader.readAsText(file);
+  });
+}
+
+function interceptFileInputs() {
+  // MutationObserver로 동적으로 생성되는 file input도 감지
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType !== 1) continue;
+
+        const inputs = node.tagName === 'INPUT'
+          ? [node]
+          : node.querySelectorAll ? [...node.querySelectorAll('input[type="file"]')] : [];
+
+        for (const input of inputs) {
+          if (input.type === 'file' && !input.dataset.pgIntercepted) {
+            input.dataset.pgIntercepted = 'true';
+            input.addEventListener('change', handleFileAttach, true);
+          }
+        }
+      }
+    }
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  // 이미 있는 file input도 잡기
+  document.querySelectorAll('input[type="file"]').forEach((input) => {
+    if (!input.dataset.pgIntercepted) {
+      input.dataset.pgIntercepted = 'true';
+      input.addEventListener('change', handleFileAttach, true);
+    }
+  });
+}
+
+async function handleFileAttach(event) {
+  const input = event.target;
+  const files = input.files;
+  if (!files || files.length === 0) return;
+
+  for (const file of files) {
+    if (!isScannableFile(file)) {
+      // 바이너리 파일은 스캔 불가 → 경고만 표시
+      showAlert(`[FILE] ${file.name}\nBinary file - cannot scan for PII/injection`, 'info');
+      continue;
+    }
+
+    if (file.size > 500000) {
+      showAlert(`[FILE] ${file.name}\nFile too large (${(file.size / 1024).toFixed(0)}KB > 500KB limit)`, 'warning');
+      continue;
+    }
+
+    try {
+      showAlert(`[FILE] ${file.name}\nScanning...`, 'info');
+
+      const content = await readFileAsText(file);
+
+      chrome.runtime.sendMessage(
+        { type: 'SCAN_FILE', fileName: file.name, content },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            showAlert(`[FILE] ${file.name}\nScan failed: extension error`, 'warning');
+            return;
+          }
+
+          if (!response || response.status !== 'success') {
+            showAlert(`[FILE] ${file.name}\nScan failed: ${response?.message || 'unknown'}`, 'warning');
+            return;
+          }
+
+          if (response.blocked) {
+            // 차단: file input 초기화
+            showAlert(buildFileScanAlert(file.name, response), 'danger');
+            input.value = '';
+          } else if (response.pii?.found || response.injection?.found) {
+            // 경고만 (차단은 안 함)
+            showAlert(buildFileScanAlert(file.name, response), 'warning');
+          } else {
+            showAlert(`[FILE OK] ${file.name}\nNo threats detected`, 'info');
+            setTimeout(hideAlert, 3000);
+          }
+        },
+      );
+    } catch (err) {
+      showAlert(`[FILE] ${file.name}\nRead error: ${err.message}`, 'warning');
+    }
+  }
+}
+
+function buildFileScanAlert(fileName, r) {
+  let text = r.blocked
+    ? `[FILE BLOCKED] ${fileName}\n`
+    : `[FILE WARNING] ${fileName}\n`;
+
+  if (r.injection?.found) {
+    text += `Injection: ${r.injection.pct} (${r.injection.severity})`;
+    if (r.injection.suspiciousLines?.length > 0) {
+      text += ` - ${r.injection.suspiciousLines.length} suspicious lines`;
+    }
+    text += '\n';
+  }
+
+  if (r.pii?.found) {
+    text += `PII: ${r.pii.totalCount} items (${r.pii.types.join(', ')})`;
+  }
+
+  return text.trim();
+}
+
+// Start file interception
+interceptFileInputs();
+
+// ─── Prompt analysis (existing) ─────────────────────────────
+
 let debounceTimer = null;
 
 document.body.addEventListener('keyup', (e) => {

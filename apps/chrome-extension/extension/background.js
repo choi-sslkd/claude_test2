@@ -47,6 +47,7 @@ let analyzePrompt = null;
 
 const RULES_API_URL = 'http://localhost:3000/admin/rules/active';
 const SCORE_API_URL = 'http://localhost:3000/api/v1/score';
+const FILE_SCAN_API_URL = 'http://localhost:3000/api/v1/scan-file';
 const RULES_REFRESH_MS = 60 * 1000;
 
 let activeRules = [];
@@ -292,6 +293,18 @@ setInterval(() => {
 }, RULES_REFRESH_MS);
 
 // Server API scoring (primary path)
+// File scan via server API
+async function scanFileViaServer(fileName, content) {
+  const response = await fetch(FILE_SCAN_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName, content }),
+  });
+
+  if (!response.ok) throw new Error(`File scan failed: ${response.status}`);
+  return response.json();
+}
+
 async function scoreViaServer(text) {
   const response = await fetch(SCORE_API_URL, {
     method: 'POST',
@@ -304,6 +317,20 @@ async function scoreViaServer(text) {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // File scan handler
+  if (request.type === 'SCAN_FILE') {
+    (async () => {
+      try {
+        const result = await scanFileViaServer(request.fileName, request.content);
+        sendResponse({ status: 'success', ...result });
+      } catch (error) {
+        console.error('[Prompt Guard] File scan error:', error);
+        sendResponse({ status: 'error', message: error?.message || String(error) });
+      }
+    })();
+    return true;
+  }
+
   if (request.type !== 'ANALYZE_PROMPT') {
     return true;
   }
