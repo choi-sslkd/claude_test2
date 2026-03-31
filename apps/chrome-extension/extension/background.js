@@ -317,20 +317,6 @@ async function scoreViaServer(text) {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // File scan handler
-  if (request.type === 'SCAN_FILE') {
-    (async () => {
-      try {
-        const result = await scanFileViaServer(request.fileName, request.content);
-        sendResponse({ status: 'success', ...result });
-      } catch (error) {
-        console.error('[Prompt Guard] File scan error:', error);
-        sendResponse({ status: 'error', message: error?.message || String(error) });
-      }
-    })();
-    return true;
-  }
-
   if (request.type !== 'ANALYZE_PROMPT') {
     return true;
   }

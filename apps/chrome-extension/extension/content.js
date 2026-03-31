@@ -1,32 +1,19 @@
-// extension/content.js — Dual score display (Injection + Ambiguity)
+// extension/content.js
+// PII 검사: 브라우저에서 직접 수행 (서버 전송 없음)
+// 인젝션 검사: 마스킹된 텍스트만 서버로 전송
+
+// ─── Alert UI ───────────────────────────────────────────────
 
 const alertBox = document.createElement('div');
 alertBox.style.cssText = `
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  padding: 15px 25px;
-  background-color: #ff4d4f;
-  color: white;
-  font-weight: bold;
-  border-radius: 8px;
+  position: fixed; top: 20px; right: 20px;
+  padding: 15px 25px; background-color: #ff4d4f; color: white;
+  font-weight: bold; border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  z-index: 2147483647;
-  display: none;
-  pointer-events: none;
-  max-width: 480px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  font-size: 13px;
+  z-index: 2147483647; display: none; pointer-events: none;
+  max-width: 480px; line-height: 1.6; white-space: pre-wrap; font-size: 13px;
 `;
 document.body.appendChild(alertBox);
-
-function getPromptText(target) {
-  if (!target) return '';
-  if (typeof target.value === 'string') return target.value;
-  if (typeof target.textContent === 'string') return target.textContent;
-  return '';
-}
 
 function showAlert(message, type = 'danger') {
   alertBox.innerText = message;
@@ -36,123 +23,199 @@ function showAlert(message, type = 'danger') {
   alertBox.style.display = 'block';
 }
 
-function hideAlert() {
-  alertBox.style.display = 'none';
+function hideAlert() { alertBox.style.display = 'none'; }
+
+// ─── Client-Side PII Detection (서버 전송 없음) ─────────────
+
+const PII_PATTERNS = [
+  { type: 'KR_SSN', label: '주민등록번호',
+    regex: /(\d{6})\s*[-–]\s*(\d{7})/g,
+    mask: () => '******-*******' },
+  { type: 'CREDIT_CARD', label: '카드번호',
+    regex: /(\d{4})\s*[-–]?\s*(\d{4})\s*[-–]?\s*(\d{4})\s*[-–]?\s*(\d{4})/g,
+    mask: (m) => '****-****-****-' + m.slice(-4) },
+  { type: 'PHONE_KR', label: '전화번호',
+    regex: /(01[016789])\s*[-–.]?\s*(\d{3,4})\s*[-–.]?\s*(\d{4})/g,
+    mask: (m) => m.slice(0, 3) + '-****-****' },
+  { type: 'EMAIL', label: '이메일',
+    regex: /([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g,
+    mask: (m) => m[0] + '***@' + m.split('@')[1] },
+  { type: 'IP_ADDRESS', label: 'IP주소',
+    regex: /\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/g,
+    mask: (m) => m.split('.')[0] + '.***.***.' + m.split('.')[3] },
+  { type: 'API_KEY', label: 'API키',
+    regex: /\b(sk[-_]|pk[-_]|api[-_]|key[-_]|token[-_]|secret[-_])([a-zA-Z0-9_-]{8,})\b/gi,
+    mask: (m) => m.slice(0, m.indexOf('-') + 1 || 3) + '****************' },
+  { type: 'AWS_KEY', label: 'AWS키',
+    regex: /\b(AKIA[A-Z0-9]{16})\b/g,
+    mask: () => 'AKIA****************' },
+  { type: 'PASSWORD', label: '비밀번호',
+    regex: /((?:password|passwd|pwd|비밀번호|패스워드)\s*[=:]\s*)(\S+)/gi,
+    mask: (m) => m.replace(/(\S*[=:]\s*)(\S+)/, '$1********') },
+  { type: 'BANK_ACCOUNT', label: '계좌번호',
+    regex: /\b(\d{3,4})\s*[-–]\s*(\d{2,6})\s*[-–]\s*(\d{4,6})\b/g,
+    mask: () => '***-******-****' },
+];
+
+function scanPII(text) {
+  const matches = [];
+  let maskedText = text;
+
+  for (const p of PII_PATTERNS) {
+    p.regex.lastIndex = 0;
+    let m;
+    while ((m = p.regex.exec(text)) !== null) {
+      matches.push({ type: p.type, label: p.label, original: m[0], index: m.index });
+    }
+  }
+
+  // 뒤에서부터 마스킹 (인덱스 보존)
+  const sorted = [...matches].sort((a, b) => b.index - a.index);
+  for (const m of sorted) {
+    const pattern = PII_PATTERNS.find((p) => p.type === m.type);
+    const masked = pattern ? pattern.mask(m.original) : '****';
+    maskedText = maskedText.slice(0, m.index) + masked + maskedText.slice(m.index + m.original.length);
+    m.masked = masked;
+  }
+
+  const types = [...new Set(matches.map((m) => m.label))];
+  return {
+    hasPII: matches.length > 0,
+    count: matches.length,
+    types,
+    matches,
+    maskedText,
+    summary: matches.length > 0 ? `${types.join(', ')} ${matches.length}건 감지` : '',
+  };
 }
 
-function safeSendMessage(text, callback) {
+// ─── Messaging ──────────────────────────────────────────────
+
+function safeSendMessage(msg, callback) {
   try {
-    chrome.runtime.sendMessage({ type: 'ANALYZE_PROMPT', text }, (response) => {
+    chrome.runtime.sendMessage(msg, (response) => {
       if (chrome.runtime.lastError) {
-        console.warn('[Prompt Guard] background 연결 대기 중:', chrome.runtime.lastError.message);
+        console.warn('[PG] background error:', chrome.runtime.lastError.message);
         return;
       }
       callback(response);
     });
   } catch (error) {
     if (error?.message?.includes('Extension context invalidated')) {
-      showAlert('Extension updated. Please refresh the page (F5).', 'warning');
-      return;
+      showAlert('Extension updated. Please refresh (F5).', 'warning');
     }
-    console.error('[Prompt Guard] 메시지 전송 실패:', error);
   }
 }
+
+// ─── Prompt Analysis (PII local + injection server) ─────────
 
 function findPromptBox() {
   return document.querySelector('#prompt-textarea');
 }
 
-function clearPromptBox(promptBox) {
-  if (!promptBox) return;
-  if ('value' in promptBox) {
-    promptBox.value = '';
-    promptBox.dispatchEvent(new Event('input', { bubbles: true }));
-    return;
-  }
-  promptBox.innerHTML = '<p><br></p>';
-  promptBox.dispatchEvent(new Event('input', { bubbles: true }));
+function getPromptText(target) {
+  if (!target) return '';
+  return target.value ?? target.textContent ?? '';
 }
 
-function normalizeResponse(response) {
-  if (!response || response.status !== 'success') return null;
-
-  const overallRisk = (response.overallRisk || 'note').toLowerCase();
-  const blocked = Boolean(response.blocked);
-  const injPct = response.injectionPct || 'N/A';
-  const ambPct = response.ambiguityPct || 'N/A';
-  const injSev = (response.injectionSeverity || 'note').toUpperCase();
-  const ambSev = (response.ambiguitySeverity || 'note').toUpperCase();
-  const matches = response.matches || [];
-  const masking = response.masking || { hasPII: false, maskedCount: 0, summary: '' };
-
-  return { overallRisk, blocked, injPct, ambPct, injSev, ambSev, matches, masking };
+function clearPromptBox(box) {
+  if (!box) return;
+  if ('value' in box) { box.value = ''; box.dispatchEvent(new Event('input', { bubbles: true })); return; }
+  box.innerHTML = '<p><br></p>'; box.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-function buildMaskingLine(masking) {
-  if (!masking || !masking.hasPII) return '';
-  return `\nPII Masked: ${masking.summary}`;
+function analyzePrompt(text, isSubmit, callback) {
+  // 1. Client-side PII scan (개인정보는 브라우저에서만 처리)
+  const pii = scanPII(text);
+
+  // 2. 서버에는 마스킹된 텍스트만 전송 (인젝션 검사용)
+  const textForServer = pii.hasPII ? pii.maskedText : text;
+
+  safeSendMessage({ type: 'ANALYZE_PROMPT', text: textForServer }, (response) => {
+    if (!response || response.status !== 'success') {
+      // 서버 연결 실패 → PII 결과만으로 판단
+      if (pii.hasPII) {
+        callback({
+          blocked: pii.count >= 5,
+          alertType: pii.count >= 5 ? 'danger' : 'warning',
+          text: pii.count >= 5
+            ? `[PII BLOCKED]\n${pii.summary}\nToo many PII items detected`
+            : `[PII WARNING]\n${pii.summary}`,
+        });
+      } else {
+        callback(null);
+      }
+      return;
+    }
+
+    const r = normalizeServerResponse(response);
+
+    // PII 정보를 클라이언트 결과로 합침
+    r.pii = pii;
+
+    const alert = buildAlert(r, isSubmit);
+    callback(alert ? { blocked: r.blocked, ...alert } : null);
+  });
 }
 
-function buildAlertMessage(r, isSubmit = false) {
+function normalizeServerResponse(response) {
+  return {
+    overallRisk: (response.overallRisk || 'note').toLowerCase(),
+    blocked: Boolean(response.blocked),
+    injPct: response.injectionPct || 'N/A',
+    ambPct: response.ambiguityPct || 'N/A',
+    injSev: (response.injectionSeverity || 'note').toUpperCase(),
+    ambSev: (response.ambiguitySeverity || 'note').toUpperCase(),
+    matches: response.matches || [],
+    pii: { hasPII: false, count: 0, summary: '' },
+  };
+}
+
+function buildAlert(r, isSubmit) {
   const matchText = r.matches.length > 0
-    ? r.matches.map((m) => `"${m.pattern || m.id}"`).join(', ')
-    : '';
-  const maskLine = buildMaskingLine(r.masking);
+    ? r.matches.map((m) => `"${m.pattern || m.id}"`).join(', ') : '';
+  const piiLine = r.pii?.hasPII ? `\nPII: ${r.pii.summary} (client-side, not sent to server)` : '';
 
   if (r.blocked || r.overallRisk === 'critical') {
-    let text = `[BLOCKED / ${r.overallRisk.toUpperCase()}]\n`;
-    text += `Injection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
-    if (matchText) text += `\nMatched: ${matchText}`;
-    text += maskLine;
-    return { type: 'danger', text };
+    let t = `[BLOCKED / ${r.overallRisk.toUpperCase()}]\n`;
+    t += `Injection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
+    if (matchText) t += `\nMatched: ${matchText}`;
+    t += piiLine;
+    return { alertType: 'danger', text: t };
   }
-
   if (r.overallRisk === 'high') {
-    let text = `[HIGH RISK]\n`;
-    text += `Injection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
-    if (matchText) text += `\nMatched: ${matchText}`;
-    text += maskLine;
-    return { type: isSubmit ? 'danger' : 'warning', text };
+    let t = `[HIGH RISK]\nInjection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
+    if (matchText) t += `\nMatched: ${matchText}`;
+    t += piiLine;
+    return { alertType: isSubmit ? 'danger' : 'warning', text: t };
   }
-
   if (r.overallRisk === 'medium') {
-    let text = `[MEDIUM]\n`;
-    text += `Injection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
-    if (matchText) text += `\nMatched: ${matchText}`;
-    text += maskLine;
-    return { type: 'warning', text };
+    let t = `[MEDIUM]\nInjection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
+    t += piiLine;
+    return { alertType: 'warning', text: t };
   }
-
   if (r.overallRisk === 'low') {
-    let text = `[LOW]\nInjection: ${r.injPct} | Ambiguity: ${r.ambPct}`;
-    text += maskLine;
-    return { type: 'info', text };
+    let t = `[LOW]\nInjection: ${r.injPct} | Ambiguity: ${r.ambPct}`;
+    t += piiLine;
+    return piiLine ? { alertType: 'info', text: t } : { alertType: 'info', text: t };
   }
-
-  // note level - only show if PII detected
-  if (r.masking && r.masking.hasPII) {
-    return { type: 'warning', text: `[PII DETECTED]${maskLine}` };
+  // note level
+  if (r.pii?.hasPII) {
+    return { alertType: 'warning', text: `[PII DETECTED]\n${r.pii.summary}\n(client-side, not sent to server)` };
   }
-
   return null;
 }
 
-// ─── File attachment interception ────────────────────────────
+// ─── File Attachment Scan (PII: local only) ─────────────────
 
-const SCANNABLE_TYPES = [
-  'text/plain', 'text/csv', 'text/tab-separated-values',
-  'application/json', 'text/markdown', 'text/html',
-  'application/xml', 'text/xml', 'text/yaml',
-];
 const SCANNABLE_EXTENSIONS = [
-  '.txt', '.csv', '.tsv', '.json', '.jsonl', '.md',
-  '.html', '.xml', '.yaml', '.yml', '.log', '.env', '.py', '.js', '.ts',
+  '.txt', '.csv', '.tsv', '.json', '.jsonl', '.md', '.html',
+  '.xml', '.yaml', '.yml', '.log', '.env', '.py', '.js', '.ts',
 ];
 
 function isScannableFile(file) {
-  if (SCANNABLE_TYPES.includes(file.type)) return true;
   const ext = '.' + file.name.split('.').pop().toLowerCase();
-  return SCANNABLE_EXTENSIONS.includes(ext);
+  return SCANNABLE_EXTENSIONS.includes(ext) || file.type.startsWith('text/');
 }
 
 function readFileAsText(file) {
@@ -164,17 +227,45 @@ function readFileAsText(file) {
   });
 }
 
+function scanFileLocally(fileName, content) {
+  const lines = content.split('\n').slice(0, 500);
+  const allPII = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const pii = scanPII(lines[i]);
+    if (pii.hasPII) {
+      for (const m of pii.matches) {
+        allPII.push({ ...m, line: i + 1 });
+      }
+    }
+  }
+
+  const piiTypes = [...new Set(allPII.map((m) => m.label))];
+  const blocked = allPII.length >= 5;
+
+  return {
+    fileName,
+    pii: {
+      found: allPII.length > 0,
+      count: allPII.length,
+      types: piiTypes,
+      details: allPII.slice(0, 20),
+    },
+    blocked,
+    summary: allPII.length > 0
+      ? `${piiTypes.join(', ')} ${allPII.length}건 감지`
+      : 'No PII detected',
+  };
+}
+
 function interceptFileInputs() {
-  // MutationObserver로 동적으로 생성되는 file input도 감지
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType !== 1) continue;
-
         const inputs = node.tagName === 'INPUT'
           ? [node]
-          : node.querySelectorAll ? [...node.querySelectorAll('input[type="file"]')] : [];
-
+          : [...(node.querySelectorAll?.('input[type="file"]') || [])];
         for (const input of inputs) {
           if (input.type === 'file' && !input.dataset.pgIntercepted) {
             input.dataset.pgIntercepted = 'true';
@@ -184,10 +275,8 @@ function interceptFileInputs() {
       }
     }
   });
-
   observer.observe(document.body, { childList: true, subtree: true });
 
-  // 이미 있는 file input도 잡기
   document.querySelectorAll('input[type="file"]').forEach((input) => {
     if (!input.dataset.pgIntercepted) {
       input.dataset.pgIntercepted = 'true';
@@ -198,112 +287,72 @@ function interceptFileInputs() {
 
 async function handleFileAttach(event) {
   const input = event.target;
-  const files = input.files;
-  if (!files || files.length === 0) return;
+  if (!input.files || input.files.length === 0) return;
 
-  for (const file of files) {
+  for (const file of input.files) {
     if (!isScannableFile(file)) {
-      // 바이너리 파일은 스캔 불가 → 경고만 표시
-      showAlert(`[FILE] ${file.name}\nBinary file - cannot scan for PII/injection`, 'info');
+      showAlert(`[FILE] ${file.name}\nBinary file - cannot scan`, 'info');
       continue;
     }
-
     if (file.size > 500000) {
-      showAlert(`[FILE] ${file.name}\nFile too large (${(file.size / 1024).toFixed(0)}KB > 500KB limit)`, 'warning');
+      showAlert(`[FILE] ${file.name}\nToo large (${(file.size / 1024).toFixed(0)}KB > 500KB)`, 'warning');
       continue;
     }
 
     try {
-      showAlert(`[FILE] ${file.name}\nScanning...`, 'info');
-
+      showAlert(`[FILE] ${file.name}\nScanning locally...`, 'info');
       const content = await readFileAsText(file);
 
-      chrome.runtime.sendMessage(
-        { type: 'SCAN_FILE', fileName: file.name, content },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            showAlert(`[FILE] ${file.name}\nScan failed: extension error`, 'warning');
-            return;
-          }
+      // PII 검사는 브라우저에서 직접 수행 (서버 전송 없음)
+      const result = scanFileLocally(file.name, content);
 
-          if (!response || response.status !== 'success') {
-            showAlert(`[FILE] ${file.name}\nScan failed: ${response?.message || 'unknown'}`, 'warning');
-            return;
-          }
-
-          if (response.blocked) {
-            // 차단: file input 초기화
-            showAlert(buildFileScanAlert(file.name, response), 'danger');
-            input.value = '';
-          } else if (response.pii?.found || response.injection?.found) {
-            // 경고만 (차단은 안 함)
-            showAlert(buildFileScanAlert(file.name, response), 'warning');
-          } else {
-            showAlert(`[FILE OK] ${file.name}\nNo threats detected`, 'info');
-            setTimeout(hideAlert, 3000);
-          }
-        },
-      );
+      if (result.blocked) {
+        showAlert(
+          `[FILE BLOCKED] ${file.name}\nPII: ${result.summary}\nToo many PII items - file attachment blocked\n(Scanned locally, nothing sent to server)`,
+          'danger',
+        );
+        input.value = '';
+      } else if (result.pii.found) {
+        showAlert(
+          `[FILE WARNING] ${file.name}\nPII: ${result.summary}\n(Scanned locally, nothing sent to server)`,
+          'warning',
+        );
+      } else {
+        showAlert(`[FILE OK] ${file.name}\nNo PII detected (scanned locally)`, 'info');
+        setTimeout(hideAlert, 3000);
+      }
     } catch (err) {
       showAlert(`[FILE] ${file.name}\nRead error: ${err.message}`, 'warning');
     }
   }
 }
 
-function buildFileScanAlert(fileName, r) {
-  let text = r.blocked
-    ? `[FILE BLOCKED] ${fileName}\n`
-    : `[FILE WARNING] ${fileName}\n`;
-
-  if (r.injection?.found) {
-    text += `Injection: ${r.injection.pct} (${r.injection.severity})`;
-    if (r.injection.suspiciousLines?.length > 0) {
-      text += ` - ${r.injection.suspiciousLines.length} suspicious lines`;
-    }
-    text += '\n';
-  }
-
-  if (r.pii?.found) {
-    text += `PII: ${r.pii.totalCount} items (${r.pii.types.join(', ')})`;
-  }
-
-  return text.trim();
-}
-
-// Start file interception
 interceptFileInputs();
 
-// ─── Prompt analysis (existing) ─────────────────────────────
+// ─── Prompt Input Listeners ─────────────────────────────────
 
 let debounceTimer = null;
 
 document.body.addEventListener('keyup', (e) => {
   const promptBox = findPromptBox();
-  if (!promptBox) return;
-  if (!(promptBox.contains(e.target) || e.target === promptBox)) return;
+  if (!promptBox || !(promptBox.contains(e.target) || e.target === promptBox)) return;
 
   const text = getPromptText(promptBox);
   clearTimeout(debounceTimer);
 
   debounceTimer = setTimeout(() => {
     if (!text.trim()) { hideAlert(); return; }
-
-    safeSendMessage(text, (response) => {
-      const r = normalizeResponse(response);
-      if (!r) return;
-      const alert = buildAlertMessage(r, false);
-      if (!alert) { hideAlert(); return; }
-      showAlert(alert.text, alert.type);
+    analyzePrompt(text, false, (result) => {
+      if (!result) { hideAlert(); return; }
+      showAlert(result.text, result.alertType);
     });
   }, 400);
 });
 
 document.body.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || e.shiftKey) return;
-
   const promptBox = findPromptBox();
-  if (!promptBox) return;
-  if (!(promptBox.contains(e.target) || e.target === promptBox)) return;
+  if (!promptBox || !(promptBox.contains(e.target) || e.target === promptBox)) return;
 
   const text = getPromptText(promptBox);
   if (!text.trim()) return;
@@ -312,21 +361,22 @@ document.body.addEventListener('keydown', (e) => {
   e.stopPropagation();
   e.stopImmediatePropagation();
 
-  safeSendMessage(text, (response) => {
-    const r = normalizeResponse(response);
-    if (!r) {
-      showAlert('Analysis response unavailable', 'warning');
+  analyzePrompt(text, true, (result) => {
+    if (!result) {
+      hideAlert();
+      const sendBtn = document.querySelector('button[data-testid="send-button"]');
+      if (sendBtn) sendBtn.click();
       return;
     }
 
-    if (r.blocked || r.overallRisk === 'critical' || r.overallRisk === 'high') {
-      const alert = buildAlertMessage(r, true);
-      showAlert(alert.text, alert.type);
+    if (result.blocked) {
+      showAlert(result.text, result.alertType);
       clearPromptBox(promptBox);
       return;
     }
 
-    hideAlert();
+    showAlert(result.text, result.alertType);
+    // MEDIUM 이하는 전송 허용
     const sendBtn = document.querySelector('button[data-testid="send-button"]');
     if (sendBtn) sendBtn.click();
   });
