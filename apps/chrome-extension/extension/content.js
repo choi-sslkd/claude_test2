@@ -29,7 +29,7 @@ function hideAlert() { alertBox.style.display = 'none'; }
 
 const PII_PATTERNS = [
   { type: 'KR_SSN', label: '주민등록번호',
-    regex: /(\d{6})\s*[-–]\s*(\d{7})/g,
+    regex: /(\d{6})\s*[-–]\s*(\d{6,8})/g,
     mask: () => '******-*******' },
   { type: 'CREDIT_CARD', label: '카드번호',
     regex: /(\d{4})\s*[-–]?\s*(\d{4})\s*[-–]?\s*(\d{4})\s*[-–]?\s*(\d{4})/g,
@@ -122,6 +122,18 @@ function clearPromptBox(box) {
   if (!box) return;
   if ('value' in box) { box.value = ''; box.dispatchEvent(new Event('input', { bubbles: true })); return; }
   box.innerHTML = '<p><br></p>'; box.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function replacePromptText(box, newText) {
+  if (!box) return;
+  if ('value' in box) {
+    box.value = newText;
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    // contenteditable (ChatGPT uses this)
+    box.innerHTML = `<p>${newText}</p>`;
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  }
 }
 
 function analyzePrompt(text, isSubmit, callback) {
@@ -361,22 +373,41 @@ document.body.addEventListener('keydown', (e) => {
   e.stopPropagation();
   e.stopImmediatePropagation();
 
+  // 먼저 PII 검사 (로컬)
+  const pii = scanPII(text);
+
   analyzePrompt(text, true, (result) => {
-    if (!result) {
+    if (!result && !pii.hasPII) {
       hideAlert();
       const sendBtn = document.querySelector('button[data-testid="send-button"]');
       if (sendBtn) sendBtn.click();
       return;
     }
 
-    if (result.blocked) {
+    // 인젝션으로 차단된 경우
+    if (result && result.blocked) {
       showAlert(result.text, result.alertType);
       clearPromptBox(promptBox);
       return;
     }
 
-    showAlert(result.text, result.alertType);
-    // MEDIUM 이하는 전송 허용
+    // PII 감지 시: 입력창을 마스킹된 텍스트로 교체 후 전송
+    if (pii.hasPII) {
+      replacePromptText(promptBox, pii.maskedText);
+      showAlert(
+        `[PII MASKED]\n${pii.summary}\n원본 개인정보가 마스킹 처리되어 전송됩니다.\n(client-side, 원본은 서버에 전송되지 않음)`,
+        'warning',
+      );
+      // 마스킹된 텍스트로 교체 후 약간 딜레이 주고 전송
+      setTimeout(() => {
+        const sendBtn = document.querySelector('button[data-testid="send-button"]');
+        if (sendBtn) sendBtn.click();
+      }, 100);
+      return;
+    }
+
+    // 경고만 (MEDIUM 이하)
+    if (result) showAlert(result.text, result.alertType);
     const sendBtn = document.querySelector('button[data-testid="send-button"]');
     if (sendBtn) sendBtn.click();
   });
