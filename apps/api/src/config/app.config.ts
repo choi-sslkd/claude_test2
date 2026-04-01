@@ -18,6 +18,7 @@ export default registerAs('app', () => ({
 
   // Python ML API URL
   mlApiUrl: process.env.ML_API_URL ?? 'http://localhost:8001',
+  mlApiKey: process.env.ML_API_KEY ?? 'ml-internal-key',
 
   // 환경
   nodeEnv: process.env.NODE_ENV ?? 'development',

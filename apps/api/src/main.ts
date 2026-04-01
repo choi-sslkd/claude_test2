@@ -35,25 +35,32 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key'],
   });
 
-  const swagger = new DocumentBuilder()
-    .setTitle('Prompt Guard API')
-    .setDescription('관리자 룰 관리 및 활성 룰 배포 API')
-    .setVersion('1.0')
-    .addApiKey(
-      { type: 'apiKey', name: 'x-admin-key', in: 'header' },
-      'x-admin-key',
-    )
-    .build();
-
-  const document = SwaggerModule.createDocument(app, swagger);
-  SwaggerModule.setup('docs', app, document);
-
+  // Swagger: development 환경에서만 활성화
   const config = app.get(ConfigService);
+  const nodeEnv = config.get<string>('app.nodeEnv', 'development');
+
+  if (nodeEnv !== 'production') {
+    const swagger = new DocumentBuilder()
+      .setTitle('Prompt Guard API')
+      .setDescription('관리자 룰 관리 및 활성 룰 배포 API')
+      .setVersion('1.0')
+      .addApiKey(
+        { type: 'apiKey', name: 'x-admin-key', in: 'header' },
+        'x-admin-key',
+      )
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swagger);
+    SwaggerModule.setup('docs', app, document);
+    console.log(`📄 Swagger 문서 → http://localhost:${config.get<number>('app.port', 3000)}/docs`);
+  } else {
+    console.log('📄 Swagger 비활성화 (production 환경)');
+  }
+
   const port = config.get<number>('app.port', 3000);
 
   await app.listen(port);
   console.log(`✅ Prompt Guard API 실행 중 → http://localhost:${port}`);
-  console.log(`📄 Swagger 문서 → http://localhost:${port}/docs`);
 }
 
 bootstrap();

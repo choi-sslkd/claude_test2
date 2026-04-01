@@ -23,6 +23,7 @@ export interface MlHealthStatus {
 export class MlClientService {
   private readonly logger = new Logger(MlClientService.name);
   private readonly baseUrl: string;
+  private readonly mlApiKey: string;
 
   // ML 서버 상태 추적
   private _consecutiveFailures = 0;
@@ -34,6 +35,7 @@ export class MlClientService {
     private readonly config: ConfigService,
   ) {
     this.baseUrl = this.config.get<string>('mlApiUrl') ?? 'http://localhost:8001';
+    this.mlApiKey = this.config.get<string>('app.mlApiKey') ?? 'ml-internal-key';
   }
 
   /** ML 서버가 현재 사용 가능한지 */
@@ -64,7 +66,7 @@ export class MlClientService {
   async score(prompt: string): Promise<MlScoreResult> {
     try {
       const { data } = await firstValueFrom(
-        this.http.post<MlScoreResult>(`${this.baseUrl}/v1/score`, { prompt }, { timeout: 5000 }),
+        this.http.post<MlScoreResult>(`${this.baseUrl}/v1/score`, { prompt }, { timeout: 5000, headers: { 'x-ml-key': this.mlApiKey } }),
       );
       this._onSuccess();
       return data;
@@ -80,7 +82,7 @@ export class MlClientService {
         this.http.post<{ results: MlScoreResult[] }>(
           `${this.baseUrl}/v1/batch-score`,
           { prompts },
-          { timeout: 10000 },
+          { timeout: 10000, headers: { 'x-ml-key': this.mlApiKey } },
         ),
       );
       this._onSuccess();
@@ -95,7 +97,7 @@ export class MlClientService {
   async checkHealth(): Promise<boolean> {
     try {
       const { data } = await firstValueFrom(
-        this.http.get(`${this.baseUrl}/v1/health`, { timeout: 3000 }),
+        this.http.get(`${this.baseUrl}/v1/health`, { timeout: 3000, headers: { 'x-ml-key': this.mlApiKey } }),
       );
       this._onSuccess();
       return data?.status === 'ok';

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import time
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Header
+from typing import Optional
 
 from src.api.schemas import (
     BatchScoreRequest,
@@ -17,6 +19,27 @@ from src.api.schemas import (
 )
 
 router = APIRouter(prefix="/v1")
+
+# ML 서버 API 키 (환경변수 또는 기본값)
+ML_API_KEY = os.environ.get("ML_API_KEY", "ml-internal-key")
+
+# 프롬프트 최대 길이
+MAX_PROMPT_LENGTH = 5000
+
+
+def _verify_api_key(x_ml_key: Optional[str]):
+    """ML 서버 인증: x-ml-key 헤더 검증"""
+    if not x_ml_key or x_ml_key != ML_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid ML API key")
+
+
+def _validate_prompt(prompt: str):
+    """프롬프트 크기 검증"""
+    if len(prompt) > MAX_PROMPT_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Prompt too long: {len(prompt)} chars (max {MAX_PROMPT_LENGTH})",
+        )
 
 
 def _to_score_response(result) -> ScoreResponse:
@@ -33,13 +56,15 @@ def _to_score_response(result) -> ScoreResponse:
 
 
 @router.post("/score", response_model=ScoreResponse)
-async def score_prompt(request: Request, body: ScoreRequest):
-    """Score a single prompt for injection and ambiguity.
+async def score_prompt(
+    request: Request,
+    body: ScoreRequest,
+    x_ml_key: Optional[str] = Header(None),
+):
+    """Score a single prompt for injection and ambiguity."""
+    _verify_api_key(x_ml_key)
+    _validate_prompt(body.prompt)
 
-    Returns percentage-based scores:
-      - Prompt Injection: N%
-      - 모호함 (Ambiguity): N%
-    """
     scorer = request.app.state.scorer
     if not scorer.is_loaded:
         raise HTTPException(status_code=503, detail="Models not loaded")
@@ -48,12 +73,15 @@ async def score_prompt(request: Request, body: ScoreRequest):
 
 
 @router.post("/score/detailed", response_model=DetailedScoreResponse)
-async def score_prompt_detailed(request: Request, body: ScoreRequest):
-    """Score with KNN neighbor details for interpretability.
+async def score_prompt_detailed(
+    request: Request,
+    body: ScoreRequest,
+    x_ml_key: Optional[str] = Header(None),
+):
+    """Score with KNN neighbor details for interpretability."""
+    _verify_api_key(x_ml_key)
+    _validate_prompt(body.prompt)
 
-    Shows the K nearest neighbors that contributed to the score,
-    explaining WHY the model classified the prompt this way.
-    """
     scorer = request.app.state.scorer
     if not scorer.is_loaded:
         raise HTTPException(status_code=503, detail="Models not loaded")
@@ -78,8 +106,16 @@ async def score_prompt_detailed(request: Request, body: ScoreRequest):
 
 
 @router.post("/batch-score", response_model=BatchScoreResponse)
-async def batch_score_prompts(request: Request, body: BatchScoreRequest):
+async def batch_score_prompts(
+    request: Request,
+    body: BatchScoreRequest,
+    x_ml_key: Optional[str] = Header(None),
+):
     """Score multiple prompts in batch."""
+    _verify_api_key(x_ml_key)
+    for p in body.prompts:
+        _validate_prompt(p)
+
     scorer = request.app.state.scorer
     if not scorer.is_loaded:
         raise HTTPException(status_code=503, detail="Models not loaded")
@@ -96,7 +132,7 @@ async def batch_score_prompts(request: Request, body: BatchScoreRequest):
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request):
-    """Health check endpoint."""
+    """Health check endpoint (인증 불필요)."""
     scorer = request.app.state.scorer
     return HealthResponse(
         status="ok" if scorer.is_loaded else "degraded",

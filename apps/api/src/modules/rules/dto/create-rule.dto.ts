@@ -5,13 +5,16 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 class SafeRegexConstraint implements ValidatorConstraintInterface {
   validate(pattern: string): boolean {
     if (!pattern || pattern.length > 200) return false;
+    if (pattern.length < 3) return false;  // 너무 짧은 패턴 차단
+    // 모든 입력에 매칭되는 패턴 차단: .*, .+, ^.*$
+    if (/^\.\*$|^\.\+$|^\^?\.\*\$?$|^\^?\.\+\$?$/.test(pattern.trim())) return false;
     // ReDoS 위험 패턴 차단: 중첩 반복자
     if (/\([^)]*[+*][^)]*\)[+*{]/.test(pattern)) return false;
     // 유효한 정규식인지 확인
     try { new RegExp(pattern); return true; } catch { return false; }
   }
   defaultMessage(): string {
-    return 'pattern must be a valid regex (max 200 chars, no nested quantifiers)';
+    return 'pattern must be a valid regex (3-200 chars, no catch-all or nested quantifiers)';
   }
 }
 
