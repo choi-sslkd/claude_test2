@@ -344,6 +344,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           blocked,
           matches: serverResult.matchedRules || [],
           masking: serverResult.masking || { hasPII: false, maskedCount: 0, summary: '' },
+          mlStatus: serverResult.mlStatus || { available: true, degraded: false, message: '' },
           message: blocked
             ? `Injection: ${serverResult.injectionPct} | Ambiguity: ${serverResult.ambiguityPct}`
             : `Injection: ${serverResult.injectionPct} | Ambiguity: ${serverResult.ambiguityPct}`,

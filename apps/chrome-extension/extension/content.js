@@ -171,6 +171,7 @@ function analyzePrompt(text, isSubmit, callback) {
 }
 
 function normalizeServerResponse(response) {
+  const mlStatus = response.mlStatus || { available: true, degraded: false, message: '' };
   return {
     overallRisk: (response.overallRisk || 'note').toLowerCase(),
     blocked: Boolean(response.blocked),
@@ -180,6 +181,7 @@ function normalizeServerResponse(response) {
     ambSev: (response.ambiguitySeverity || 'note').toUpperCase(),
     matches: response.matches || [],
     pii: { hasPII: false, count: 0, summary: '' },
+    mlStatus,
   };
 }
 
@@ -187,31 +189,37 @@ function buildAlert(r, isSubmit) {
   const matchText = r.matches.length > 0
     ? r.matches.map((m) => `"${m.pattern || m.id}"`).join(', ') : '';
   const piiLine = r.pii?.hasPII ? `\nPII: ${r.pii.summary} (client-side, not sent to server)` : '';
+  const mlLine = (r.mlStatus && !r.mlStatus.available)
+    ? `\n⚠ ${r.mlStatus.message || 'ML 서버 장애. 패턴 매칭만 동작 중.'}`
+    : '';
 
   if (r.blocked || r.overallRisk === 'critical') {
     let t = `[BLOCKED / ${r.overallRisk.toUpperCase()}]\n`;
     t += `Injection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
     if (matchText) t += `\nMatched: ${matchText}`;
-    t += piiLine;
+    t += piiLine + mlLine;
     return { alertType: 'danger', text: t };
   }
   if (r.overallRisk === 'high') {
     let t = `[HIGH RISK]\nInjection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
     if (matchText) t += `\nMatched: ${matchText}`;
-    t += piiLine;
+    t += piiLine + mlLine;
     return { alertType: isSubmit ? 'danger' : 'warning', text: t };
   }
   if (r.overallRisk === 'medium') {
     let t = `[MEDIUM]\nInjection: ${r.injPct} (${r.injSev}) | Ambiguity: ${r.ambPct} (${r.ambSev})`;
-    t += piiLine;
+    t += piiLine + mlLine;
     return { alertType: 'warning', text: t };
   }
   if (r.overallRisk === 'low') {
     let t = `[LOW]\nInjection: ${r.injPct} | Ambiguity: ${r.ambPct}`;
-    t += piiLine;
-    return piiLine ? { alertType: 'info', text: t } : { alertType: 'info', text: t };
+    t += piiLine + mlLine;
+    return { alertType: 'info', text: t };
   }
   // note level
+  if (mlLine) {
+    return { alertType: 'warning', text: `[DEGRADED MODE]${mlLine}` };
+  }
   if (r.pii?.hasPII) {
     return { alertType: 'warning', text: `[PII DETECTED]\n${r.pii.summary}\n(client-side, not sent to server)` };
   }

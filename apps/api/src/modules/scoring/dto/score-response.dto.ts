@@ -16,6 +16,12 @@ export class MaskingResponse {
   @ApiPropertyOptional() maskedPrompt?: string;
 }
 
+export class MlStatusResponse {
+  @ApiProperty() available: boolean;
+  @ApiProperty() degraded: boolean;
+  @ApiProperty() message: string;
+}
+
 export class ScoreResponseDto {
   @ApiProperty() prompt: string;
 
@@ -34,6 +40,9 @@ export class ScoreResponseDto {
 
   @ApiProperty({ type: MaskingResponse })
   masking: MaskingResponse;
+
+  @ApiProperty({ type: MlStatusResponse })
+  mlStatus: MlStatusResponse;
 
   @ApiProperty() latencyMs: number;
   @ApiProperty() analyzedAt: string;

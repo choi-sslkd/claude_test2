@@ -24,6 +24,7 @@ export class ScoringService {
 
     // 2. Get ML scores from Python API
     const ml = await this.mlClient.score(prompt);
+    const mlAvailable = this.mlClient.isAvailable;
 
     // 3. Pattern match each rule & compute contributions
     const matchedRules: MatchedRuleResponse[] = [];
@@ -52,10 +53,10 @@ export class ScoringService {
     }
 
     // 4. Clamp and classify
-    // 패턴 매칭이 하나도 안 된 경우, ML 단독 점수를 20% 할인
-    // (ML 오탐지 보정: 안전한 프롬프트가 ML만으로 HIGH가 되는 것 방지)
+    // ML 사용 가능 + 패턴 매칭 없음 → ML 단독 점수 20% 할인 (오탐 방지)
+    // ML 사용 불가 → 할인 없음 (패턴 매칭만으로 최대한 잡아야 함)
     const noPatternMatch = matchedRules.length === 0;
-    const discountFactor = noPatternMatch ? 0.8 : 1.0;
+    const discountFactor = (mlAvailable && noPatternMatch) ? 0.8 : 1.0;
 
     const injectionScore = Math.min(Math.max(maxInjection * discountFactor, 0), 1);
     const ambiguityScore = Math.min(Math.max(maxAmbiguity * discountFactor, 0), 1);
@@ -68,6 +69,9 @@ export class ScoringService {
     const injIdx = severityOrder.indexOf(injectionSeverity);
     const ambIdx = Math.max(severityOrder.indexOf(ambiguitySeverity) - 1, 0);
     const overallRisk = severityOrder[Math.max(injIdx, ambIdx)];
+
+    // ML 서버 상태 정보
+    const mlHealth = this.mlClient.healthStatus;
 
     return {
       prompt: maskResult.hasPII ? maskResult.maskedPrompt : prompt,
@@ -85,6 +89,11 @@ export class ScoringService {
         types: [...new Set(maskResult.matches.map((m) => m.type))],
         summary: maskResult.summary,
         maskedPrompt: maskResult.hasPII ? maskResult.maskedPrompt : undefined,
+      },
+      mlStatus: {
+        available: mlHealth.available,
+        degraded: mlHealth.degraded,
+        message: mlHealth.message,
       },
       latencyMs: Date.now() - start,
       analyzedAt: new Date().toISOString(),
