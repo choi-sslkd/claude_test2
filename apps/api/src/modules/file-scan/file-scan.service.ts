@@ -93,7 +93,7 @@ export class FileScanService {
 
       for (let i = 0; i < linesToScore.length; i++) {
         const score = mlResults[i]?.injection_score ?? 0;
-        if (score >= 0.75) {
+        if (score >= 0.6) {
           suspiciousLines.push({
             line: linesToScore[i].line,
             text: linesToScore[i].text.slice(0, 100),
