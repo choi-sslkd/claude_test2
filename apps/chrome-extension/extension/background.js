@@ -191,18 +191,40 @@ async function fetchAsArrayBuffer(url) {
   return response.arrayBuffer();
 }
 
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout ${ms}ms`)), ms)),
+  ]);
+}
+
+let wasmRetryCount = 0;
+const WASM_MAX_RETRIES = 3;
+
 async function loadWasmEngine() {
   try {
     const wasmUrl = chrome.runtime.getURL('build/release.wasm');
-    const buffer = await fetchAsArrayBuffer(wasmUrl);
 
-    const compiledModule = await WebAssembly.compile(buffer);
+    // 5초 타임아웃으로 WASM 로딩
+    const buffer = await withTimeout(fetchAsArrayBuffer(wasmUrl), 5000);
 
-    wasmModule = await instantiateWasm(compiledModule, {
-      env: {
-        abort: () => console.error('Wasm aborted'),
-      },
-    });
+    // WASM 바이너리 크기 검증 (비정상적으로 크면 차단)
+    if (buffer.byteLength > 1024 * 1024) {
+      throw new Error(`WASM 파일이 너무 큼: ${buffer.byteLength} bytes`);
+    }
+    if (buffer.byteLength < 100) {
+      throw new Error(`WASM 파일이 너무 작음: ${buffer.byteLength} bytes`);
+    }
+
+    // 5초 타임아웃으로 컴파일 + 인스턴스화
+    const compiledModule = await withTimeout(WebAssembly.compile(buffer), 5000);
+
+    wasmModule = await withTimeout(
+      instantiateWasm(compiledModule, {
+        env: { abort: () => console.error('Wasm aborted') },
+      }),
+      5000,
+    );
 
     analyzePrompt =
       wasmModule.analyzePrompt ||
@@ -213,10 +235,20 @@ async function loadWasmEngine() {
       throw new Error('analyzePrompt export를 찾을 수 없습니다.');
     }
 
+    wasmRetryCount = 0;
     console.log('✅ [Wasm Engine] 로드 완료');
   } catch (error) {
     analyzePrompt = null;
-    console.error('❌ [Wasm Engine] 로드 실패:', error);
+    wasmRetryCount++;
+    console.error(`❌ [Wasm Engine] 로드 실패 (${wasmRetryCount}/${WASM_MAX_RETRIES}):`, error.message);
+
+    // 재시도 (최대 3회, 2초 간격)
+    if (wasmRetryCount < WASM_MAX_RETRIES) {
+      console.log(`[Wasm Engine] ${2}초 후 재시도...`);
+      setTimeout(loadWasmEngine, 2000);
+    } else {
+      console.error('[Wasm Engine] 최대 재시도 초과. 패턴 매칭 폴백으로 운영.');
+    }
   }
 }
 

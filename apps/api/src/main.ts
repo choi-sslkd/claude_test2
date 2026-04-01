@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -11,6 +12,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bodyParser: true,
   });
+
+  // 보안 헤더 (X-Content-Type-Options, X-Frame-Options, HSTS 등)
+  app.use(helmet({
+    contentSecurityPolicy: false,  // Swagger UI 호환
+  }));
 
   // Body size limit: 1MB (초대형 페이로드 방지)
   app.use(require('express').json({ limit: '1mb' }));

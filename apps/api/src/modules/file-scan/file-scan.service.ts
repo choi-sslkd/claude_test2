@@ -51,9 +51,12 @@ export class FileScanService {
   ) {}
 
   async scan(fileName: string, content: string): Promise<FileScanResult> {
+    const MAX_LINE_LENGTH = 5000;  // 줄당 최대 5000자 (초과 시 잘림)
     const lines = content.split('\n');
-    const maxLines = 500; // 최대 500줄까지 검사
-    const scannedLines = lines.slice(0, maxLines);
+    const maxLines = 500;
+    const scannedLines = lines.slice(0, maxLines).map(
+      (line) => line.length > MAX_LINE_LENGTH ? line.slice(0, MAX_LINE_LENGTH) : line,
+    );
 
     // 1. PII 검사 (전체 텍스트)
     const piiDetails: FileScanResult['pii']['details'] = [];

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompt Guard (Wasm Local)",
-  "version": "1.0",
+  "version": "1.1",
   "description": "서버 전송 없이 브라우저 내부에서 작동하는 프롬프트 검사기",
   "background": {
     "service_worker": "background.js"
@@ -21,7 +21,10 @@
   "web_accessible_resources": [
     {
       "resources": ["build/release.wasm"],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ]
     }
   ],
   "content_security_policy": {

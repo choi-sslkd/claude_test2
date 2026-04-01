@@ -45,7 +45,7 @@ export class ScoringService {
 
       matchedRules.push({
         ruleId: rule.id,
-        pattern: rule.pattern,
+        pattern: '***',  // 패턴 상세 숨김 (공격자 우회 방지)
         category: rule.category,
         injectionContribution: Math.round(injContrib * 10000) / 10000,
         ambiguityContribution: Math.round(ambContrib * 10000) / 10000,
@@ -101,10 +101,25 @@ export class ScoringService {
   }
 
   private matchPattern(text: string, pattern: string): boolean {
+    // ReDoS 방어: 패턴 길이 제한 + 위험 패턴 차단
+    if (pattern.length > 200) return false;
+    if (this.isReDoSRisk(pattern)) {
+      return text.toLowerCase().includes(pattern.toLowerCase());
+    }
+
     try {
       return new RegExp(pattern, 'i').test(text);
     } catch {
-      return text.includes(pattern.toLowerCase());
+      return text.toLowerCase().includes(pattern.toLowerCase());
     }
+  }
+
+  /** ReDoS 위험 패턴 감지: 중첩 반복자 (a+)+, (a*)*  등 */
+  private isReDoSRisk(pattern: string): boolean {
+    // 중첩 반복: (x+)+, (x*)+, (x+)*, (x{n,})+
+    if (/\([^)]*[+*][^)]*\)[+*{]/.test(pattern)) return true;
+    // 교대 반복: (a|a)+
+    if (/\([^)]*\|[^)]*\)[+*{]/.test(pattern) && pattern.length > 50) return true;
+    return false;
   }
 }
