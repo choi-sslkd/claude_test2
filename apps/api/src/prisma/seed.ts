@@ -78,14 +78,48 @@ const SEED_RULES = [
   { pattern: "act.*as.*if.*no.*restrictions",   category: OwaspCategory.POLICY_BYPASS,            mlInj: 0.85, mlAmb: 0.30 },
   { pattern: "developer.*mode",                 category: OwaspCategory.POLICY_BYPASS,            mlInj: 0.80, mlAmb: 0.30 },
 
-  // ─── 한국어 ───
+  // ─── 한국어: 인젝션 ───
   { pattern: "이전.*규칙.*무시",                  category: OwaspCategory.PROMPT_INJECTION,         mlInj: 0.90, mlAmb: 0.40 },
+  { pattern: "이전.*지시.*무시",                  category: OwaspCategory.PROMPT_INJECTION,         mlInj: 0.90, mlAmb: 0.35 },
+  { pattern: "이전.*명령.*무시",                  category: OwaspCategory.PROMPT_INJECTION,         mlInj: 0.90, mlAmb: 0.35 },
+  { pattern: "모든.*지시.*잊어",                  category: OwaspCategory.PROMPT_INJECTION,         mlInj: 0.85, mlAmb: 0.35 },
+  { pattern: "위.*지시.*무시",                    category: OwaspCategory.PROMPT_INJECTION,         mlInj: 0.85, mlAmb: 0.35 },
+  { pattern: "규칙.*무시.*대답",                  category: OwaspCategory.PROMPT_INJECTION,         mlInj: 0.85, mlAmb: 0.30 },
+
+  // ─── 한국어: 시스템 프롬프트 추출 ───
   { pattern: "시스템.*프롬프트.*보여",            category: OwaspCategory.SYSTEM_PROMPT_EXTRACTION, mlInj: 0.85, mlAmb: 0.35 },
+  { pattern: "시스템.*프롬프트.*알려",            category: OwaspCategory.SYSTEM_PROMPT_EXTRACTION, mlInj: 0.85, mlAmb: 0.35 },
+  { pattern: "원래.*프롬프트.*알려",              category: OwaspCategory.SYSTEM_PROMPT_EXTRACTION, mlInj: 0.85, mlAmb: 0.35 },
+  { pattern: "내부.*지시.*출력",                  category: OwaspCategory.SYSTEM_PROMPT_EXTRACTION, mlInj: 0.80, mlAmb: 0.30 },
+  { pattern: "숨겨진.*프롬프트",                  category: OwaspCategory.SYSTEM_PROMPT_EXTRACTION, mlInj: 0.80, mlAmb: 0.30 },
+  { pattern: "초기.*설정.*보여",                  category: OwaspCategory.SYSTEM_PROMPT_EXTRACTION, mlInj: 0.80, mlAmb: 0.30 },
+
+  // ─── 한국어: 탈옥 ───
   { pattern: "탈옥",                             category: OwaspCategory.JAILBREAK,                mlInj: 0.85, mlAmb: 0.25 },
-  { pattern: "제한.*없는.*ai",                   category: OwaspCategory.JAILBREAK,                mlInj: 0.85, mlAmb: 0.25 },
+  { pattern: "제한.*없.*모드",                   category: OwaspCategory.JAILBREAK,                mlInj: 0.85, mlAmb: 0.25 },
+  { pattern: "안전.*장치.*해제",                  category: OwaspCategory.JAILBREAK,                mlInj: 0.85, mlAmb: 0.25 },
+  { pattern: "필터.*끄",                         category: OwaspCategory.JAILBREAK,                mlInj: 0.80, mlAmb: 0.25 },
+  { pattern: "검열.*없이",                       category: OwaspCategory.JAILBREAK,                mlInj: 0.80, mlAmb: 0.25 },
+  { pattern: "제한.*풀어",                       category: OwaspCategory.JAILBREAK,                mlInj: 0.80, mlAmb: 0.25 },
+  { pattern: "제한.*해제",                       category: OwaspCategory.JAILBREAK,                mlInj: 0.80, mlAmb: 0.25 },
+
+  // ─── 한국어: 역할 변경 ───
   { pattern: "너는.*이제",                       category: OwaspCategory.POLICY_BYPASS,            mlInj: 0.75, mlAmb: 0.35 },
+  { pattern: "역할.*바꿔",                       category: OwaspCategory.POLICY_BYPASS,            mlInj: 0.75, mlAmb: 0.35 },
+  { pattern: "다른.*AI.*척",                     category: OwaspCategory.POLICY_BYPASS,            mlInj: 0.75, mlAmb: 0.30 },
+
+  // ─── 한국어: 데이터 유출 ───
   { pattern: "api.*키.*알려",                    category: OwaspCategory.DATA_EXFILTRATION,        mlInj: 0.80, mlAmb: 0.30 },
   { pattern: "비밀번호.*알려",                    category: OwaspCategory.DATA_EXFILTRATION,        mlInj: 0.75, mlAmb: 0.30 },
+  { pattern: "서버.*설정.*보여",                  category: OwaspCategory.DATA_EXFILTRATION,        mlInj: 0.75, mlAmb: 0.25 },
+  { pattern: "환경.*변수.*알려",                  category: OwaspCategory.DATA_EXFILTRATION,        mlInj: 0.75, mlAmb: 0.25 },
+  { pattern: "인증.*토큰.*보여",                  category: OwaspCategory.DATA_EXFILTRATION,        mlInj: 0.80, mlAmb: 0.25 },
+
+  // ─── 한국어: 우회 기법 ───
+  { pattern: "교육.*목적.*프롬프트",              category: OwaspCategory.POLICY_BYPASS,            mlInj: 0.70, mlAmb: 0.30 },
+  { pattern: "디버그.*모드",                     category: OwaspCategory.POLICY_BYPASS,            mlInj: 0.75, mlAmb: 0.25 },
+  { pattern: "개발자.*모드",                     category: OwaspCategory.POLICY_BYPASS,            mlInj: 0.75, mlAmb: 0.25 },
+  { pattern: "관리자.*권한",                     category: OwaspCategory.POLICY_BYPASS,            mlInj: 0.80, mlAmb: 0.25 },
 ];
 
 async function main() {

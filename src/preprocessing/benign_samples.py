@@ -146,3 +146,14 @@ BENIGN_PROMPTS = [
     "I want to start a small online business selling handmade crafts. What are the legal and practical steps I need to take?",
     "My laptop is running very slowly. What are some things I can do to improve its performance without buying new hardware?",
 ]
+
+# Import Korean benign samples
+try:
+    from src.preprocessing.korean_injection_samples import KOREAN_BENIGN_SAMPLES
+    BENIGN_PROMPTS = BENIGN_PROMPTS + KOREAN_BENIGN_SAMPLES
+except ImportError:
+    try:
+        from preprocessing.korean_injection_samples import KOREAN_BENIGN_SAMPLES
+        BENIGN_PROMPTS = BENIGN_PROMPTS + KOREAN_BENIGN_SAMPLES
+    except ImportError:
+        pass  # Korean samples not available

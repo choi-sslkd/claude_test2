@@ -399,6 +399,27 @@ def _add_benign_prompts() -> list[InjectionSample]:
     return samples
 
 
+def _add_korean_injection_samples() -> list[InjectionSample]:
+    """Add Korean injection training samples."""
+    try:
+        from src.preprocessing.korean_injection_samples import KOREAN_INJECTION_SAMPLES
+    except ImportError:
+        from preprocessing.korean_injection_samples import KOREAN_INJECTION_SAMPLES
+
+    samples = [
+        InjectionSample(
+            id=f"korean_injection_{i}",
+            text=text,
+            label=1,  # injection
+            source="korean_curated",
+            category="korean_injection",
+        )
+        for i, text in enumerate(KOREAN_INJECTION_SAMPLES)
+    ]
+    print(f"  [korean_injection] Added {len(samples)} samples")
+    return samples
+
+
 def normalize_all_injection() -> list[InjectionSample]:
     """Run all injection normalizers and combine."""
     print("Normalizing injection datasets...")
@@ -408,6 +429,7 @@ def normalize_all_injection() -> list[InjectionSample]:
     samples.extend(normalize_prompt_leakage())
     samples.extend(normalize_raccoon_bench())
     samples.extend(_add_benign_prompts())
+    samples.extend(_add_korean_injection_samples())
     print(f"Total injection samples: {len(samples)}")
     return samples
 
