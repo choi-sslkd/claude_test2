@@ -349,56 +349,22 @@ async function scoreViaServer(text) {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type !== 'ANALYZE_PROMPT') {
-    return true;
-  }
-
-  (async () => {
-    try {
-      const text = typeof request.text === 'string' ? request.text : '';
-
-      let result;
+  // ─── 타이핑 중: WASM 로컬 패턴 매칭 (서버 호출 없음) ───
+  if (request.type === 'ANALYZE_WASM') {
+    (async () => {
       try {
-        // Primary: server API (ML + pattern + OWASP weights)
-        const serverResult = await scoreViaServer(text);
-        const blocked = serverResult.overallRisk === 'HIGH' || serverResult.overallRisk === 'CRITICAL';
-
-        result = {
-          status: 'success',
-          source: 'server-api',
-          injectionScore: serverResult.injectionScore,
-          injectionPct: serverResult.injectionPct,
-          injectionSeverity: serverResult.injectionSeverity,
-          ambiguityScore: serverResult.ambiguityScore,
-          ambiguityPct: serverResult.ambiguityPct,
-          ambiguitySeverity: serverResult.ambiguitySeverity,
-          overallRisk: serverResult.overallRisk,
-          blocked,
-          matches: serverResult.matchedRules || [],
-          masking: serverResult.masking || { hasPII: false, maskedCount: 0, summary: '' },
-          mlStatus: serverResult.mlStatus || { available: true, degraded: false, message: '' },
-          message: blocked
-            ? `Injection: ${serverResult.injectionPct} | Ambiguity: ${serverResult.ambiguityPct}`
-            : `Injection: ${serverResult.injectionPct} | Ambiguity: ${serverResult.ambiguityPct}`,
-        };
-      } catch (serverError) {
-        // Fallback: local WASM/pattern matching (offline mode)
-        console.warn('[Prompt Guard] Server unavailable, using fallback:', serverError.message);
+        const text = typeof request.text === 'string' ? request.text : '';
         await ensureWasmLoaded();
         await ensureRulesLoaded();
 
+        let result;
         try {
           const wasmResult = analyzePromptWithWasm(text);
           result = {
             status: 'success',
-            source: 'wasm-fallback',
-            injectionScore: 0,
-            injectionPct: 'N/A',
-            injectionSeverity: wasmResult.riskLevel,
-            ambiguityScore: 0,
-            ambiguityPct: 'N/A',
-            ambiguitySeverity: 'note',
-            overallRisk: wasmResult.riskLevel,
+            source: 'wasm-local',
+            score: wasmResult.score,
+            riskLevel: wasmResult.riskLevel,
             blocked: wasmResult.blocked,
             matches: wasmResult.matches,
             message: wasmResult.message,
@@ -407,27 +373,96 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           const fallback = buildFallbackAnalysis(text);
           result = {
             status: 'success',
-            source: 'pattern-fallback',
-            injectionScore: 0,
-            injectionPct: 'N/A',
-            injectionSeverity: fallback.riskLevel,
-            ambiguityScore: 0,
-            ambiguityPct: 'N/A',
-            ambiguitySeverity: 'note',
-            overallRisk: fallback.riskLevel,
+            source: 'pattern-local',
+            score: fallback.score,
+            riskLevel: fallback.riskLevel,
             blocked: fallback.blocked,
             matches: fallback.matches,
             message: fallback.message,
           };
         }
-      }
 
-      sendResponse(result);
-    } catch (error) {
-      console.error('[Prompt Guard] 분석 중 에러:', error);
-      sendResponse({ status: 'error', message: error?.message || String(error) });
-    }
-  })();
+        sendResponse(result);
+      } catch (error) {
+        sendResponse({ status: 'error', message: error?.message || String(error) });
+      }
+    })();
+    return true;
+  }
+
+  // ─── Enter 시: 서버 API (ML + 패턴 + OWASP) → 실패 시 WASM 폴백 ───
+  if (request.type === 'ANALYZE_SERVER') {
+    (async () => {
+      try {
+        const text = typeof request.text === 'string' ? request.text : '';
+
+        let result;
+        try {
+          const serverResult = await scoreViaServer(text);
+          const blocked = serverResult.overallRisk === 'HIGH' || serverResult.overallRisk === 'CRITICAL';
+
+          result = {
+            status: 'success',
+            source: 'server-api',
+            injectionScore: serverResult.injectionScore,
+            injectionPct: serverResult.injectionPct,
+            injectionSeverity: serverResult.injectionSeverity,
+            ambiguityScore: serverResult.ambiguityScore,
+            ambiguityPct: serverResult.ambiguityPct,
+            ambiguitySeverity: serverResult.ambiguitySeverity,
+            overallRisk: serverResult.overallRisk,
+            blocked,
+            matches: serverResult.matchedRules || [],
+            masking: serverResult.masking || { hasPII: false, maskedCount: 0, summary: '' },
+            mlStatus: serverResult.mlStatus || { available: true, degraded: false, message: '' },
+            message: `Injection: ${serverResult.injectionPct} | Ambiguity: ${serverResult.ambiguityPct}`,
+          };
+        } catch (serverError) {
+          // 서버 실패 → WASM 폴백
+          console.warn('[Prompt Guard] Server unavailable, WASM fallback:', serverError.message);
+          await ensureWasmLoaded();
+          await ensureRulesLoaded();
+
+          try {
+            const wasmResult = analyzePromptWithWasm(text);
+            result = {
+              status: 'success',
+              source: 'wasm-fallback',
+              injectionPct: 'N/A',
+              ambiguityPct: 'N/A',
+              injectionSeverity: wasmResult.riskLevel,
+              ambiguitySeverity: 'note',
+              overallRisk: wasmResult.riskLevel,
+              blocked: wasmResult.blocked,
+              matches: wasmResult.matches,
+              mlStatus: { available: false, degraded: true, message: 'ML 서버 장애. WASM 패턴 매칭으로 판정.' },
+              message: wasmResult.message,
+            };
+          } catch {
+            const fallback = buildFallbackAnalysis(text);
+            result = {
+              status: 'success',
+              source: 'pattern-fallback',
+              injectionPct: 'N/A',
+              ambiguityPct: 'N/A',
+              injectionSeverity: fallback.riskLevel,
+              ambiguitySeverity: 'note',
+              overallRisk: fallback.riskLevel,
+              blocked: fallback.blocked,
+              matches: fallback.matches,
+              mlStatus: { available: false, degraded: true, message: 'ML 서버 + WASM 장애. 패턴 매칭만 동작.' },
+              message: fallback.message,
+            };
+          }
+        }
+
+        sendResponse(result);
+      } catch (error) {
+        sendResponse({ status: 'error', message: error?.message || String(error) });
+      }
+    })();
+    return true;
+  }
 
   return true;
 });

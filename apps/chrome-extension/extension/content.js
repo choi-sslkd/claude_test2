@@ -136,24 +136,58 @@ function replacePromptText(box, newText) {
   }
 }
 
-function analyzePrompt(text, isSubmit, callback) {
-  // 1. Client-side PII scan (개인정보는 브라우저에서만 처리)
+// ─── 타이핑 중: WASM 로컬 분석 (서버 호출 없음) ───
+function analyzeWithWasm(text, callback) {
   const pii = scanPII(text);
 
-  // 2. 서버에는 마스킹된 텍스트만 전송 (인젝션 검사용)
+  safeSendMessage({ type: 'ANALYZE_WASM', text }, (response) => {
+    if (!response || response.status !== 'success') {
+      // WASM도 안 되면 PII만
+      if (pii.hasPII) {
+        callback({ blocked: false, alertType: 'warning', text: `[PII]\n${pii.summary}` });
+      } else {
+        callback(null);
+      }
+      return;
+    }
+
+    const risk = (response.riskLevel || 'low').toLowerCase();
+    const blocked = response.blocked;
+    const matches = response.matches || [];
+    const matchText = matches.length > 0
+      ? matches.map((m) => `"${m.pattern || m.id}"`).join(', ') : '';
+    const piiLine = pii.hasPII ? `\nPII: ${pii.summary} (client-side)` : '';
+
+    if (blocked || risk === 'critical' || risk === 'high') {
+      callback({
+        blocked: true,
+        alertType: 'danger',
+        text: `[WASM: ${risk.toUpperCase()}]\nPattern score: ${response.score}${matchText ? '\nMatched: ' + matchText : ''}${piiLine}`,
+      });
+    } else if (risk === 'medium' || matches.length > 0) {
+      callback({
+        blocked: false,
+        alertType: 'warning',
+        text: `[WASM: ${risk.toUpperCase()}]\nPattern score: ${response.score}${matchText ? '\nMatched: ' + matchText : ''}${piiLine}`,
+      });
+    } else if (pii.hasPII) {
+      callback({ blocked: false, alertType: 'warning', text: `[PII]\n${pii.summary} (client-side)` });
+    } else {
+      callback(null);
+    }
+  });
+}
+
+// ─── Enter 시: 서버 API (ML + 패턴 + OWASP) ───
+function analyzeWithServer(text, callback) {
+  const pii = scanPII(text);
   const textForServer = pii.hasPII ? pii.maskedText : text;
 
-  safeSendMessage({ type: 'ANALYZE_PROMPT', text: textForServer }, (response) => {
+  safeSendMessage({ type: 'ANALYZE_SERVER', text: textForServer }, (response) => {
     if (!response || response.status !== 'success') {
-      // 서버 연결 실패 → PII 결과만으로 판단
+      // 서버 실패 → PII만
       if (pii.hasPII) {
-        callback({
-          blocked: pii.count >= 5,
-          alertType: pii.count >= 5 ? 'danger' : 'warning',
-          text: pii.count >= 5
-            ? `[PII BLOCKED]\n${pii.summary}\nToo many PII items detected`
-            : `[PII WARNING]\n${pii.summary}`,
-        });
+        callback({ blocked: pii.count >= 5, alertType: pii.count >= 5 ? 'danger' : 'warning', text: `[PII]\n${pii.summary}` });
       } else {
         callback(null);
       }
@@ -161,11 +195,9 @@ function analyzePrompt(text, isSubmit, callback) {
     }
 
     const r = normalizeServerResponse(response);
-
-    // PII 정보를 클라이언트 결과로 합침
     r.pii = pii;
 
-    const alert = buildAlert(r, isSubmit);
+    const alert = buildAlert(r, true);
     callback(alert ? { blocked: r.blocked, ...alert } : null);
   });
 }
@@ -350,9 +382,12 @@ async function handleFileAttach(event) {
 interceptFileInputs();
 
 // ─── Prompt Input Listeners ─────────────────────────────────
+// 타이핑: WASM 로컬 패턴 매칭 (서버 호출 없음, 즉시 응답)
+// Enter: 서버 API (ML + 패턴 + OWASP) 호출 후 최종 판정
 
 let debounceTimer = null;
 
+// ─── 타이핑 중: WASM 로컬 분석 ───
 document.body.addEventListener('keyup', (e) => {
   const promptBox = findPromptBox();
   if (!promptBox || !(promptBox.contains(e.target) || e.target === promptBox)) return;
@@ -362,13 +397,16 @@ document.body.addEventListener('keyup', (e) => {
 
   debounceTimer = setTimeout(() => {
     if (!text.trim()) { hideAlert(); return; }
-    analyzePrompt(text, false, (result) => {
+
+    // WASM 로컬 분석 (서버 호출 없음)
+    analyzeWithWasm(text, (result) => {
       if (!result) { hideAlert(); return; }
       showAlert(result.text, result.alertType);
     });
   }, 400);
 });
 
+// ─── Enter: 서버 API + ML 최종 판정 ───
 document.body.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || e.shiftKey) return;
   const promptBox = findPromptBox();
@@ -381,10 +419,12 @@ document.body.addEventListener('keydown', (e) => {
   e.stopPropagation();
   e.stopImmediatePropagation();
 
-  // 먼저 PII 검사 (로컬)
   const pii = scanPII(text);
 
-  analyzePrompt(text, true, (result) => {
+  // 서버 API로 최종 판정 (ML + 패턴 + OWASP)
+  const textForServer = pii.hasPII ? pii.maskedText : text;
+
+  analyzeWithServer(textForServer, (result) => {
     if (!result && !pii.hasPII) {
       hideAlert();
       const sendBtn = document.querySelector('button[data-testid="send-button"]');
@@ -392,21 +432,20 @@ document.body.addEventListener('keydown', (e) => {
       return;
     }
 
-    // 인젝션으로 차단된 경우
+    // 인젝션으로 차단
     if (result && result.blocked) {
       showAlert(result.text, result.alertType);
       clearPromptBox(promptBox);
       return;
     }
 
-    // PII 감지 시: 입력창을 마스킹된 텍스트로 교체 후 전송
+    // PII 감지 → 마스킹 후 전송
     if (pii.hasPII) {
       replacePromptText(promptBox, pii.maskedText);
       showAlert(
         `[PII MASKED]\n${pii.summary}\n원본 개인정보가 마스킹 처리되어 전송됩니다.\n(client-side, 원본은 서버에 전송되지 않음)`,
         'warning',
       );
-      // 마스킹된 텍스트로 교체 후 약간 딜레이 주고 전송
       setTimeout(() => {
         const sendBtn = document.querySelector('button[data-testid="send-button"]');
         if (sendBtn) sendBtn.click();
@@ -414,7 +453,7 @@ document.body.addEventListener('keydown', (e) => {
       return;
     }
 
-    // 경고만 (MEDIUM 이하)
+    // MEDIUM 이하 → 경고만 표시하고 전송
     if (result) showAlert(result.text, result.alertType);
     const sendBtn = document.querySelector('button[data-testid="send-button"]');
     if (sendBtn) sendBtn.click();
