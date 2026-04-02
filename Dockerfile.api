@@ -6,30 +6,25 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl && rm -rf /var/lib/apt/lists/*
 
-# Root deps
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts 2>/dev/null || npm install
-
-# Rule engine package - 먼저 빌드
+# Rule engine package - 먼저 복사 + 설치
 COPY packages/rule-engine/ packages/rule-engine/
-RUN cd packages/rule-engine && npm ci 2>/dev/null || npm install
+RUN cd packages/rule-engine && npm install
 
 # API deps
 COPY apps/api/package.json apps/api/package-lock.json apps/api/
+RUN cd apps/api && npm install --ignore-scripts
 
-# rule-engine 심볼릭 링크를 직접 생성 (Docker에서 file: 참조 해결)
-RUN mkdir -p apps/api/node_modules/@prompt-guard && \
-    ln -s /app/packages/rule-engine apps/api/node_modules/@prompt-guard/rule-engine
-
-RUN cd apps/api && npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
+# rule-engine을 직접 복사 (심볼릭 링크 대신)
+RUN rm -rf apps/api/node_modules/@prompt-guard/rule-engine && \
+    mkdir -p apps/api/node_modules/@prompt-guard && \
+    cp -r packages/rule-engine apps/api/node_modules/@prompt-guard/rule-engine
 
 # API source + prisma
 COPY apps/api/ apps/api/
 
-# 심볼릭 링크 재생성 (COPY가 덮어썼을 수 있으므로)
+# rule-engine 다시 복사 (COPY가 node_modules를 덮어쓸 수 있으므로)
 RUN mkdir -p apps/api/node_modules/@prompt-guard && \
-    rm -rf apps/api/node_modules/@prompt-guard/rule-engine && \
-    ln -s /app/packages/rule-engine apps/api/node_modules/@prompt-guard/rule-engine
+    cp -r packages/rule-engine apps/api/node_modules/@prompt-guard/rule-engine
 
 # Generate Prisma client
 RUN cd apps/api && npx prisma generate --schema prisma/schema.prisma
