@@ -459,6 +459,7 @@ interceptFileInputs();
 // Enter: 서버 API (ML + 패턴 + OWASP) 호출 후 최종 판정
 
 let debounceTimer = null;
+let isAnalyzing = false;  // Enter 중복 방지 락
 
 // ─── 타이핑 중: WASM 로컬 분석 ───
 document.body.addEventListener('keyup', (e) => {
@@ -492,12 +493,18 @@ document.body.addEventListener('keydown', (e) => {
   e.stopPropagation();
   e.stopImmediatePropagation();
 
-  const pii = scanPII(text);
+  // 중복 Enter 방지
+  if (isAnalyzing) return;
+  isAnalyzing = true;
 
-  // 서버 API로 최종 판정 (ML + 패턴 + OWASP)
+  showAlert('[ANALYZING...]\n서버에서 ML 분석 중...', 'info');
+
+  const pii = scanPII(text);
   const textForServer = pii.hasPII ? pii.maskedText : text;
 
   analyzeWithServer(textForServer, (result) => {
+    isAnalyzing = false;
+
     if (!result && !pii.hasPII) {
       hideAlert();
       const sendBtn = document.querySelector('button[data-testid="send-button"]');
@@ -505,14 +512,15 @@ document.body.addEventListener('keydown', (e) => {
       return;
     }
 
-    // 인젝션으로 차단
+    // 인젝션으로 차단 → 경고 3초 유지 후 사라짐
     if (result && result.blocked) {
       showAlert(result.text, result.alertType);
       clearPromptBox(promptBox);
+      setTimeout(hideAlert, 5000);  // 5초간 경고 표시
       return;
     }
 
-    // PII 감지 → 마스킹 후 전송
+    // PII 감지 → 마스킹 후 전송 (경고 3초 표시)
     if (pii.hasPII) {
       replacePromptText(promptBox, pii.maskedText);
       showAlert(
@@ -522,12 +530,16 @@ document.body.addEventListener('keydown', (e) => {
       setTimeout(() => {
         const sendBtn = document.querySelector('button[data-testid="send-button"]');
         if (sendBtn) sendBtn.click();
-      }, 100);
+        setTimeout(hideAlert, 3000);
+      }, 500);
       return;
     }
 
-    // MEDIUM 이하 → 경고만 표시하고 전송
-    if (result) showAlert(result.text, result.alertType);
+    // MEDIUM 이하 → 경고 표시 + 전송 + 3초 후 사라짐
+    if (result) {
+      showAlert(result.text, result.alertType);
+      setTimeout(hideAlert, 3000);
+    }
     const sendBtn = document.querySelector('button[data-testid="send-button"]');
     if (sendBtn) sendBtn.click();
   });
