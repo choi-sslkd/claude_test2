@@ -548,25 +548,28 @@ async function handleFilePaste(event) {
 interceptFileInputs();
 
 // ─── Prompt Input Listeners ─────────────────────────────────
-// 타이핑: WASM 패턴 매칭 (즉시, 서버 호출 없음)
-// Enter: WASM이 HIGH/CRITICAL이면 차단, PII면 마스킹 후 전송
+// 타이핑: WASM(즉시) + ML(1초 디바운스) 동시 표시
+// Enter: 차단/마스킹/통과
 
 let debounceTimer = null;
+let mlTimer = null;
 let lastWasmBlocked = false;
 
-// ─── 타이핑 중: WASM만 ───
+// ─── 타이핑 중: WASM(즉시) + ML(1초 후) ───
 document.body.addEventListener('keyup', (e) => {
   const promptBox = findPromptBox();
   if (!promptBox || !(promptBox.contains(e.target) || e.target === promptBox)) return;
 
   const text = getPromptText(promptBox);
   clearTimeout(debounceTimer);
+  clearTimeout(mlTimer);
 
   debounceTimer = setTimeout(() => {
     if (!text.trim()) { hideAlert(); lastWasmBlocked = false; return; }
 
     const pii = scanPII(text);
 
+    // [1] WASM 즉시
     analyzeWithWasm(text, (result) => {
       if (!result && !pii.hasPII) {
         hideAlert();
@@ -574,31 +577,34 @@ document.body.addEventListener('keyup', (e) => {
         return;
       }
 
-      let wasmText = '';
-      let wasmType = 'info';
-
       if (result) {
-        wasmText = result.text;
-        wasmType = result.alertType;
+        showWasmResult(result.text, result.alertType);
         lastWasmBlocked = result.blocked || false;
       }
 
-      let piiText = '';
       if (pii.hasPII) {
-        piiText = `PII: ${pii.summary} (client-side)`;
-        if (!wasmType || wasmType === 'info') wasmType = 'warning';
-      }
-
-      if (wasmText || piiText) {
-        showWasmResult(wasmText, wasmType);
-        if (piiText) showMlResult(piiText, 'warning');
-        else hideMl();
+        showMlResult(`PII: ${pii.summary} (client-side)`, 'warning');
       }
     });
+
+    // [2] ML 서버 1초 후 호출
+    const textForServer = pii.hasPII ? pii.maskedText : text;
+    mlTimer = setTimeout(() => {
+      analyzeWithServer(textForServer, (result) => {
+        if (!result) {
+          // ML 실패 → 깔끔한 한 줄 메시지
+          showMlResult('ML 서버 연결 실패. WASM 패턴 매칭만 실행 중.', 'info');
+        } else {
+          // ML 성공
+          const piiLine = pii.hasPII ? `\nPII: ${pii.summary}` : '';
+          showMlResult(result.text + piiLine, result.alertType);
+        }
+      });
+    }, 1000);
   }, 400);
 });
 
-// ─── Enter: WASM 차단 판정 + PII 마스킹 + 전송 ───
+// ─── Enter: 차단/마스킹/통과 ───
 document.body.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || e.shiftKey) return;
   const promptBox = findPromptBox();
