@@ -1,12 +1,12 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiSecurity } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuditLogService, AuditLogType } from './audit-log.service';
-import { AdminGuard } from '../../common/guards/admin.guard';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 @ApiTags('Audit Logs')
 @Controller('api/v1/audit-logs')
-@UseGuards(AdminGuard)         // 로그 조회는 관리자 전용
-@ApiSecurity('x-admin-key')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 export class AuditLogController {
   constructor(private readonly auditLogService: AuditLogService) {}
 
