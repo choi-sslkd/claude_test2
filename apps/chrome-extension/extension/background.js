@@ -310,13 +310,13 @@ function analyzePromptWithWasm(text) {
   };
 }
 
+// WASM은 시작 시 로딩하지 않음 (서비스 워커 초기화 에러 방지)
+// 첫 요청 시 ensureWasmLoaded()로 지연 로딩
 chrome.runtime.onInstalled.addListener(async () => {
-  await loadWasmEngine();
   await fetchActiveRules();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  await loadWasmEngine();
   await fetchActiveRules();
 });
 
