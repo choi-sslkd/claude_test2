@@ -14,7 +14,8 @@
       "Bash(DATABASE_URL=\"file:./dev.db\" npx prisma db push --schema prisma/schema.prisma)",
       "Bash(python scripts/test_rule_engine.py)",
       "Bash(npx vite:*)",
-      "Bash(pkill -f \"nest start\")"
+      "Bash(pkill -f \"nest start\")",
+      "WebSearch"
     ]
   }
 }

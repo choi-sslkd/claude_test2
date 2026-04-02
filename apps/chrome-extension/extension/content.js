@@ -425,30 +425,72 @@ async function scanAndAlert(file, clearFn) {
   }
 }
 
+let isFileScanning = false;  // 파일 스캔 중복 방지
+
 async function handleFileAttach(event) {
+  if (isFileScanning) return;
   const input = event.target;
   if (!input.files || input.files.length === 0) return;
+
+  isFileScanning = true;
   for (const file of input.files) {
     await scanAndAlert(file, () => { input.value = ''; });
   }
+  isFileScanning = false;
 }
 
 async function handleFileDrop(event) {
   const files = event.dataTransfer?.files;
   if (!files || files.length === 0) return;
-  for (const file of files) {
-    await scanAndAlert(file, null);
+
+  // 스캔 가능한 텍스트 파일이 있으면 먼저 차단
+  const hasScannableFile = Array.from(files).some(f => isScannableFile(f));
+  if (hasScannableFile) {
+    event.preventDefault();  // ChatGPT로 전달 차단
+    event.stopPropagation();
+
+    if (isFileScanning) return;
+    isFileScanning = true;
+
+    let allSafe = true;
+    for (const file of files) {
+      await new Promise((resolve) => {
+        scanAndAlert(file, null);
+        // scanFileLocally가 비동기이므로 결과 대기
+        const checkInterval = setInterval(() => {
+          if (!isFileScanning) { clearInterval(checkInterval); resolve(); }
+        }, 100);
+        // 3초 타임아웃
+        setTimeout(() => { clearInterval(checkInterval); resolve(); }, 3000);
+      });
+    }
+    isFileScanning = false;
   }
 }
 
 async function handleFilePaste(event) {
   const items = event.clipboardData?.items;
   if (!items) return;
+
+  const files = [];
   for (const item of items) {
     if (item.kind === 'file') {
       const file = item.getAsFile();
-      if (file) await scanAndAlert(file, null);
+      if (file && isScannableFile(file)) files.push(file);
     }
+  }
+
+  if (files.length > 0) {
+    event.preventDefault();  // ChatGPT로 전달 차단
+    event.stopPropagation();
+
+    if (isFileScanning) return;
+    isFileScanning = true;
+
+    for (const file of files) {
+      await scanAndAlert(file, null);
+    }
+    isFileScanning = false;
   }
 }
 
