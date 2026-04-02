@@ -548,15 +548,13 @@ async function handleFilePaste(event) {
 interceptFileInputs();
 
 // ─── Prompt Input Listeners ─────────────────────────────────
-// 타이핑: WASM(즉시) + ML(비동기) 동시 표시
-// Enter: 최종 판정 (차단/통과)
+// 타이핑: WASM 패턴 매칭 (즉시, 서버 호출 없음)
+// Enter: WASM이 HIGH/CRITICAL이면 차단, PII면 마스킹 후 전송
 
 let debounceTimer = null;
-let mlDebounceTimer = null;
-let isAnalyzing = false;
-let lastWasmBlocked = false;  // WASM이 차단 판정했는지
+let lastWasmBlocked = false;
 
-// ─── 타이핑 중: WASM만 (ML은 Enter 시에만) ───
+// ─── 타이핑 중: WASM만 ───
 document.body.addEventListener('keyup', (e) => {
   const promptBox = findPromptBox();
   if (!promptBox || !(promptBox.contains(e.target) || e.target === promptBox)) return;
@@ -569,28 +567,38 @@ document.body.addEventListener('keyup', (e) => {
 
     const pii = scanPII(text);
 
-    // WASM 즉시 결과
     analyzeWithWasm(text, (result) => {
       if (!result && !pii.hasPII) {
-        hideWasm();
-        hideMl();
+        hideAlert();
         lastWasmBlocked = false;
-      } else {
-        if (result) {
-          showWasmResult(result.text, result.alertType);
-          lastWasmBlocked = result.blocked || false;
-        }
-        if (pii.hasPII) {
-          showMlResult(`PII: ${pii.summary} (client-side)`, 'warning');
-        } else {
-          showMlResult('Enter를 누르면 ML 분석이 실행됩니다', 'info');
-        }
+        return;
+      }
+
+      let wasmText = '';
+      let wasmType = 'info';
+
+      if (result) {
+        wasmText = result.text;
+        wasmType = result.alertType;
+        lastWasmBlocked = result.blocked || false;
+      }
+
+      let piiText = '';
+      if (pii.hasPII) {
+        piiText = `PII: ${pii.summary} (client-side)`;
+        if (!wasmType || wasmType === 'info') wasmType = 'warning';
+      }
+
+      if (wasmText || piiText) {
+        showWasmResult(wasmText, wasmType);
+        if (piiText) showMlResult(piiText, 'warning');
+        else hideMl();
       }
     });
   }, 400);
 });
 
-// ─── Enter: 최종 판정 (차단/마스킹/통과) ───
+// ─── Enter: WASM 차단 판정 + PII 마스킹 + 전송 ───
 document.body.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || e.shiftKey) return;
   const promptBox = findPromptBox();
@@ -603,67 +611,30 @@ document.body.addEventListener('keydown', (e) => {
   e.stopPropagation();
   e.stopImmediatePropagation();
 
-  if (isAnalyzing) return;
-  isAnalyzing = true;
-
   const pii = scanPII(text);
-  const textForServer = pii.hasPII ? pii.maskedText : text;
 
-  // WASM이 이미 차단 판정이면 서버 안 기다리고 즉시 차단
+  // WASM이 차단이면 즉시 차단
   if (lastWasmBlocked) {
-    isAnalyzing = false;
-    showAlert('[BLOCKED / WASM]\n패턴 매칭으로 즉시 차단됨', 'danger');
+    showAlert('[BLOCKED]\nWASM 패턴 매칭으로 차단됨', 'danger');
     clearPromptBox(promptBox);
     setTimeout(hideAlert, 5000);
     return;
   }
 
-  showMlResult('ML 서버 분석 중...', 'info');
-
-  // 서버 ML로 최종 판정
-  analyzeWithServer(textForServer, (result) => {
-    isAnalyzing = false;
-
-    // 차단
-    if (result && result.blocked) {
-      showMlResult(result.text, result.alertType);
-      clearPromptBox(promptBox);
-      setTimeout(hideAlert, 5000);
-      return;
-    }
-
-    // PII 마스킹 후 전송
-    if (pii.hasPII) {
-      replacePromptText(promptBox, pii.maskedText);
-      showMlResult(`[PII MASKED] ${pii.summary}`, 'warning');
-      setTimeout(() => {
-        const sendBtn = document.querySelector('button[data-testid="send-button"]');
-        if (sendBtn) sendBtn.click();
-        setTimeout(hideAlert, 3000);
-      }, 500);
-      return;
-    }
-
-    // 통과 → ML 결과 표시 후 전송
-    if (result) {
-      showMlResult(result.text, result.alertType);
-      setTimeout(hideAlert, 3000);
-    } else {
-      showMlResult('ML: 위험 없음', 'info');
-      setTimeout(hideMl, 2000);
-    }
-    const sendBtn = document.querySelector('button[data-testid="send-button"]');
-    if (sendBtn) sendBtn.click();
-  });
-
-  // 서버 3초 타임아웃
-  setTimeout(() => {
-    if (isAnalyzing) {
-      isAnalyzing = false;
-      hideAlert();
+  // PII 마스킹 후 전송
+  if (pii.hasPII) {
+    replacePromptText(promptBox, pii.maskedText);
+    showAlert(`[PII MASKED]\n${pii.summary}\n마스킹 처리되어 전송됩니다.`, 'warning');
+    setTimeout(() => {
       const sendBtn = document.querySelector('button[data-testid="send-button"]');
       if (sendBtn) sendBtn.click();
-    }
-  }, 3000);
+      setTimeout(hideAlert, 3000);
+    }, 500);
+    return;
+  }
 
+  // 통과 → 전송
+  hideAlert();
+  const sendBtn = document.querySelector('button[data-testid="send-button"]');
+  if (sendBtn) sendBtn.click();
 }, true);
