@@ -556,46 +556,37 @@ let mlDebounceTimer = null;
 let isAnalyzing = false;
 let lastWasmBlocked = false;  // WASM이 차단 판정했는지
 
-// ─── 타이핑 중: WASM(즉시) + ML(비동기) 둘 다 표시 ───
+// ─── 타이핑 중: WASM만 (ML은 Enter 시에만) ───
 document.body.addEventListener('keyup', (e) => {
   const promptBox = findPromptBox();
   if (!promptBox || !(promptBox.contains(e.target) || e.target === promptBox)) return;
 
   const text = getPromptText(promptBox);
   clearTimeout(debounceTimer);
-  clearTimeout(mlDebounceTimer);
 
   debounceTimer = setTimeout(() => {
     if (!text.trim()) { hideAlert(); lastWasmBlocked = false; return; }
 
     const pii = scanPII(text);
 
-    // [1] WASM 즉시 결과 (상단 박스)
+    // WASM 즉시 결과
     analyzeWithWasm(text, (result) => {
-      if (!result) {
+      if (!result && !pii.hasPII) {
         hideWasm();
+        hideMl();
         lastWasmBlocked = false;
       } else {
-        showWasmResult(result.text, result.alertType);
-        lastWasmBlocked = result.blocked || false;
+        if (result) {
+          showWasmResult(result.text, result.alertType);
+          lastWasmBlocked = result.blocked || false;
+        }
+        if (pii.hasPII) {
+          showMlResult(`PII: ${pii.summary} (client-side)`, 'warning');
+        } else {
+          showMlResult('Enter를 누르면 ML 분석이 실행됩니다', 'info');
+        }
       }
     });
-
-    // [2] 서버 ML 결과 (하단 박스, 800ms 디바운스)
-    const textForServer = pii.hasPII ? pii.maskedText : text;
-    showMlResult('ML 분석 중...', 'info');
-
-    mlDebounceTimer = setTimeout(() => {
-      analyzeWithServer(textForServer, (result) => {
-        if (!result) {
-          showMlResult('ML: 위험 없음', 'info');
-          setTimeout(hideMl, 2000);
-        } else {
-          const piiLine = pii.hasPII ? `\nPII: ${pii.summary}` : '';
-          showMlResult(`${result.text}${piiLine}`, result.alertType);
-        }
-      });
-    }, 800);
   }, 400);
 });
 
@@ -627,7 +618,7 @@ document.body.addEventListener('keydown', (e) => {
     return;
   }
 
-  showAlert('[ENTER] 최종 판정 중...', 'info');
+  showMlResult('ML 서버 분석 중...', 'info');
 
   // 서버 ML로 최종 판정
   analyzeWithServer(textForServer, (result) => {
@@ -635,7 +626,7 @@ document.body.addEventListener('keydown', (e) => {
 
     // 차단
     if (result && result.blocked) {
-      showAlert(result.text, result.alertType);
+      showMlResult(result.text, result.alertType);
       clearPromptBox(promptBox);
       setTimeout(hideAlert, 5000);
       return;
@@ -644,7 +635,7 @@ document.body.addEventListener('keydown', (e) => {
     // PII 마스킹 후 전송
     if (pii.hasPII) {
       replacePromptText(promptBox, pii.maskedText);
-      showAlert(`[PII MASKED]\n${pii.summary}`, 'warning');
+      showMlResult(`[PII MASKED] ${pii.summary}`, 'warning');
       setTimeout(() => {
         const sendBtn = document.querySelector('button[data-testid="send-button"]');
         if (sendBtn) sendBtn.click();
@@ -653,8 +644,14 @@ document.body.addEventListener('keydown', (e) => {
       return;
     }
 
-    // 통과 → 전송
-    hideAlert();
+    // 통과 → ML 결과 표시 후 전송
+    if (result) {
+      showMlResult(result.text, result.alertType);
+      setTimeout(hideAlert, 3000);
+    } else {
+      showMlResult('ML: 위험 없음', 'info');
+      setTimeout(hideMl, 2000);
+    }
     const sendBtn = document.querySelector('button[data-testid="send-button"]');
     if (sendBtn) sendBtn.click();
   });
