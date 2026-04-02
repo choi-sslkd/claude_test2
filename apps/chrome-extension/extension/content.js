@@ -587,20 +587,16 @@ document.body.addEventListener('keyup', (e) => {
       }
     });
 
-    // [2] ML 서버 1초 후 호출
+    // [2] ML 서버 즉시 호출
     const textForServer = pii.hasPII ? pii.maskedText : text;
-    mlTimer = setTimeout(() => {
-      analyzeWithServer(textForServer, (result) => {
-        if (!result) {
-          // ML 실패 → 깔끔한 한 줄 메시지
-          showMlResult('ML 서버 연결 실패. WASM 패턴 매칭만 실행 중.', 'info');
-        } else {
-          // ML 성공
-          const piiLine = pii.hasPII ? `\nPII: ${pii.summary}` : '';
-          showMlResult(result.text + piiLine, result.alertType);
-        }
-      });
-    }, 1000);
+    analyzeWithServer(textForServer, (result) => {
+      if (!result) {
+        showMlResult('ML 서버 연결 실패. WASM 패턴 매칭만 실행 중.', 'info');
+      } else {
+        const piiLine = pii.hasPII ? `\nPII: ${pii.summary}` : '';
+        showMlResult(result.text + piiLine, result.alertType);
+      }
+    });
   }, 400);
 });
 
