@@ -48,10 +48,8 @@ export class MlClientService {
     const degraded = this._consecutiveFailures > 0;
     let message = 'ML 서버 정상';
 
-    if (this._consecutiveFailures >= 3) {
-      message = `ML 서버 장애 (연속 ${this._consecutiveFailures}회 실패). 패턴 매칭만 동작 중.`;
-    } else if (this._consecutiveFailures > 0) {
-      message = `ML 서버 불안정 (연속 ${this._consecutiveFailures}회 실패). ML 점수가 부정확할 수 있습니다.`;
+    if (this._consecutiveFailures > 0) {
+      message = 'ML 서버 연결 실패. WASM 패턴 매칭만 실행 중.';
     }
 
     return {
