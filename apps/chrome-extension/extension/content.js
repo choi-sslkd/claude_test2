@@ -2,28 +2,78 @@
 // PII 검사: 브라우저에서 직접 수행 (서버 전송 없음)
 // 인젝션 검사: 마스킹된 텍스트만 서버로 전송
 
-// ─── Alert UI ───────────────────────────────────────────────
+// ─── Alert UI (WASM 상단 + ML 하단, 2줄) ─────────────────────
 
+const alertContainer = document.createElement('div');
+alertContainer.style.cssText = `
+  position: fixed; top: 20px; right: 20px;
+  z-index: 2147483647; pointer-events: none;
+  display: flex; flex-direction: column; gap: 8px;
+  max-width: 500px;
+`;
+document.body.appendChild(alertContainer);
+
+// WASM 결과 박스 (상단)
+const wasmBox = document.createElement('div');
+wasmBox.style.cssText = `
+  padding: 12px 20px; color: white; font-weight: bold;
+  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  display: none; white-space: pre-wrap; font-size: 12px; line-height: 1.5;
+  border-left: 4px solid #722ed1;
+`;
+alertContainer.appendChild(wasmBox);
+
+// ML 결과 박스 (하단)
+const mlBox = document.createElement('div');
+mlBox.style.cssText = `
+  padding: 12px 20px; color: white; font-weight: bold;
+  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  display: none; white-space: pre-wrap; font-size: 12px; line-height: 1.5;
+  border-left: 4px solid #1677ff;
+`;
+alertContainer.appendChild(mlBox);
+
+// 기존 호환용 alertBox (파일 스캔 등에서 사용)
 const alertBox = document.createElement('div');
 alertBox.style.cssText = `
-  position: fixed; top: 20px; right: 20px;
-  padding: 15px 25px; background-color: #ff4d4f; color: white;
-  font-weight: bold; border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  z-index: 2147483647; display: none; pointer-events: none;
-  max-width: 480px; line-height: 1.6; white-space: pre-wrap; font-size: 13px;
+  padding: 12px 20px; color: white; font-weight: bold;
+  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  display: none; white-space: pre-wrap; font-size: 12px; line-height: 1.5;
 `;
-document.body.appendChild(alertBox);
+alertContainer.appendChild(alertBox);
+
+function setBoxColor(box, type) {
+  if (type === 'danger') box.style.backgroundColor = '#ff4d4f';
+  else if (type === 'warning') box.style.backgroundColor = '#faad14';
+  else box.style.backgroundColor = '#1677ff';
+}
+
+function showWasmResult(message, type = 'info') {
+  wasmBox.innerText = '[WASM] ' + message;
+  setBoxColor(wasmBox, type);
+  wasmBox.style.display = 'block';
+}
+
+function showMlResult(message, type = 'info') {
+  mlBox.innerText = '[ML] ' + message;
+  setBoxColor(mlBox, type);
+  mlBox.style.display = 'block';
+}
 
 function showAlert(message, type = 'danger') {
   alertBox.innerText = message;
-  if (type === 'danger') alertBox.style.backgroundColor = '#ff4d4f';
-  else if (type === 'warning') alertBox.style.backgroundColor = '#faad14';
-  else alertBox.style.backgroundColor = '#1677ff';
+  setBoxColor(alertBox, type);
   alertBox.style.display = 'block';
 }
 
-function hideAlert() { alertBox.style.display = 'none'; }
+function hideAlert() {
+  alertBox.style.display = 'none';
+  wasmBox.style.display = 'none';
+  mlBox.style.display = 'none';
+}
+
+function hideWasm() { wasmBox.style.display = 'none'; }
+function hideMl() { mlBox.style.display = 'none'; }
 
 // ─── Client-Side PII Detection (서버 전송 없음) ─────────────
 
@@ -497,32 +547,58 @@ async function handleFilePaste(event) {
 interceptFileInputs();
 
 // ─── Prompt Input Listeners ─────────────────────────────────
-// 타이핑: WASM 로컬 패턴 매칭 (서버 호출 없음, 즉시 응답)
-// Enter: 서버 API (ML + 패턴 + OWASP) 호출 후 최종 판정
+// 타이핑: WASM(즉시) + ML(비동기) 동시 표시
+// Enter: 최종 판정 (차단/통과)
 
 let debounceTimer = null;
-let isAnalyzing = false;  // Enter 중복 방지 락
+let mlDebounceTimer = null;
+let isAnalyzing = false;
+let lastWasmBlocked = false;  // WASM이 차단 판정했는지
 
-// ─── 타이핑 중: WASM 로컬 분석 ───
+// ─── 타이핑 중: WASM(즉시) + ML(비동기) 둘 다 표시 ───
 document.body.addEventListener('keyup', (e) => {
   const promptBox = findPromptBox();
   if (!promptBox || !(promptBox.contains(e.target) || e.target === promptBox)) return;
 
   const text = getPromptText(promptBox);
   clearTimeout(debounceTimer);
+  clearTimeout(mlDebounceTimer);
 
   debounceTimer = setTimeout(() => {
-    if (!text.trim()) { hideAlert(); return; }
+    if (!text.trim()) { hideAlert(); lastWasmBlocked = false; return; }
 
-    // WASM 로컬 분석 (서버 호출 없음)
+    const pii = scanPII(text);
+
+    // [1] WASM 즉시 결과 (상단 박스)
     analyzeWithWasm(text, (result) => {
-      if (!result) { hideAlert(); return; }
-      showAlert(result.text, result.alertType);
+      if (!result) {
+        hideWasm();
+        lastWasmBlocked = false;
+      } else {
+        showWasmResult(result.text, result.alertType);
+        lastWasmBlocked = result.blocked || false;
+      }
     });
+
+    // [2] 서버 ML 결과 (하단 박스, 800ms 디바운스)
+    const textForServer = pii.hasPII ? pii.maskedText : text;
+    showMlResult('ML 분석 중...', 'info');
+
+    mlDebounceTimer = setTimeout(() => {
+      analyzeWithServer(textForServer, (result) => {
+        if (!result) {
+          showMlResult('ML: 위험 없음', 'info');
+          setTimeout(hideMl, 2000);
+        } else {
+          const piiLine = pii.hasPII ? `\nPII: ${pii.summary}` : '';
+          showMlResult(`${result.text}${piiLine}`, result.alertType);
+        }
+      });
+    }, 800);
   }, 400);
 });
 
-// ─── Enter: WASM + 서버 ML 병렬 실행 ───
+// ─── Enter: 최종 판정 (차단/마스킹/통과) ───
 document.body.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || e.shiftKey) return;
   const promptBox = findPromptBox();
@@ -541,55 +617,33 @@ document.body.addEventListener('keydown', (e) => {
   const pii = scanPII(text);
   const textForServer = pii.hasPII ? pii.maskedText : text;
 
-  let wasmDone = false;
-  let serverDone = false;
-  let wasmResult = null;
-  let serverResult = null;
-  let alreadyDecided = false;
+  // WASM이 이미 차단 판정이면 서버 안 기다리고 즉시 차단
+  if (lastWasmBlocked) {
+    isAnalyzing = false;
+    showAlert('[BLOCKED / WASM]\n패턴 매칭으로 즉시 차단됨', 'danger');
+    clearPromptBox(promptBox);
+    setTimeout(hideAlert, 5000);
+    return;
+  }
 
-  // 둘 중 하나라도 "차단"이면 즉시 차단 (먼저 끝나는 쪽)
-  function decide() {
-    if (alreadyDecided) return;
+  showAlert('[ENTER] 최종 판정 중...', 'info');
 
-    // WASM이 차단이면 서버 기다리지 않고 즉시 차단
-    if (wasmDone && wasmResult && wasmResult.blocked) {
-      alreadyDecided = true;
-      isAnalyzing = false;
-      showAlert(
-        `[BLOCKED / WASM]\n${wasmResult.text}\n(패턴 매칭으로 즉시 차단)`,
-        'danger',
-      );
-      clearPromptBox(promptBox);
-      setTimeout(hideAlert, 5000);
-      return;
-    }
-
-    // 서버가 차단이면 즉시 차단
-    if (serverDone && serverResult && serverResult.blocked) {
-      alreadyDecided = true;
-      isAnalyzing = false;
-      showAlert(serverResult.text, serverResult.alertType);
-      clearPromptBox(promptBox);
-      setTimeout(hideAlert, 5000);
-      return;
-    }
-
-    // 둘 다 끝나야 최종 판정
-    if (!wasmDone || !serverDone) return;
-
-    alreadyDecided = true;
+  // 서버 ML로 최종 판정
+  analyzeWithServer(textForServer, (result) => {
     isAnalyzing = false;
 
-    // 서버 결과 우선 (ML 점수 포함)
-    const finalResult = serverResult || wasmResult;
+    // 차단
+    if (result && result.blocked) {
+      showAlert(result.text, result.alertType);
+      clearPromptBox(promptBox);
+      setTimeout(hideAlert, 5000);
+      return;
+    }
 
-    // PII 마스킹
+    // PII 마스킹 후 전송
     if (pii.hasPII) {
       replacePromptText(promptBox, pii.maskedText);
-      showAlert(
-        `[PII MASKED]\n${pii.summary}\n원본 개인정보가 마스킹 처리되어 전송됩니다.`,
-        'warning',
-      );
+      showAlert(`[PII MASKED]\n${pii.summary}`, 'warning');
       setTimeout(() => {
         const sendBtn = document.querySelector('button[data-testid="send-button"]');
         if (sendBtn) sendBtn.click();
@@ -598,42 +652,19 @@ document.body.addEventListener('keydown', (e) => {
       return;
     }
 
-    // 안전 → 전송
-    if (finalResult) {
-      showAlert(finalResult.text, finalResult.alertType);
-      setTimeout(hideAlert, 3000);
-    }
+    // 통과 → 전송
+    hideAlert();
     const sendBtn = document.querySelector('button[data-testid="send-button"]');
     if (sendBtn) sendBtn.click();
-  }
-
-  // ─── WASM 병렬 실행 (즉시) ───
-  showAlert('[ANALYZING...]\nWASM 패턴 검사 + ML 분석 병렬 진행 중...', 'info');
-
-  analyzeWithWasm(text, (result) => {
-    wasmDone = true;
-    wasmResult = result;
-    if (result) {
-      // WASM 결과 먼저 표시 (서버 응답 전)
-      showAlert(`[WASM 1차 결과]\n${result.text}\nML 결과 대기 중...`, result.alertType);
-    }
-    decide();
   });
 
-  // ─── 서버 ML 병렬 실행 (50ms 후 응답) ───
-  analyzeWithServer(textForServer, (result) => {
-    serverDone = true;
-    serverResult = result;
-    decide();
-  });
-
-  // ─── 타임아웃: 서버가 3초 안에 안 오면 WASM 결과로 판정 ───
+  // 서버 3초 타임아웃
   setTimeout(() => {
-    if (!serverDone) {
-      serverDone = true;
-      serverResult = null; // 서버 없으면 null
-      console.warn('[PG] Server timeout, using WASM result');
-      decide();
+    if (isAnalyzing) {
+      isAnalyzing = false;
+      hideAlert();
+      const sendBtn = document.querySelector('button[data-testid="send-button"]');
+      if (sendBtn) sendBtn.click();
     }
   }, 3000);
 
