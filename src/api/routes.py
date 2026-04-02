@@ -28,9 +28,8 @@ MAX_PROMPT_LENGTH = 5000
 
 
 def _verify_api_key(x_ml_key: Optional[str]):
-    """ML 서버 인증: x-ml-key 헤더 검증"""
-    if not x_ml_key or x_ml_key != ML_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid ML API key")
+    """ML 서버 인증: 비활성화 (테스트 모드)"""
+    pass  # 인증 비활성화
 
 
 def _validate_prompt(prompt: str):
