@@ -258,7 +258,7 @@ function buildAlert(r, isSubmit) {
   return null;
 }
 
-// ─── File Attachment Scan (PII: local only) ─────────────────
+// ─── File Attachment Scan (PII + WASM 인젝션, 전부 로컬) ─────
 
 const SCANNABLE_EXTENSIONS = [
   '.txt', '.csv', '.tsv', '.json', '.jsonl', '.md', '.html',
@@ -279,12 +279,16 @@ function readFileAsText(file) {
   });
 }
 
-function scanFileLocally(fileName, content) {
+function scanFileLocally(fileName, content, wasmCallback) {
   const lines = content.split('\n').slice(0, 500);
   const allPII = [];
+  const injectionLines = [];
 
   for (let i = 0; i < lines.length; i++) {
-    const pii = scanPII(lines[i]);
+    const line = lines[i].trim();
+
+    // PII 검사
+    const pii = scanPII(line);
     if (pii.hasPII) {
       for (const m of pii.matches) {
         allPII.push({ ...m, line: i + 1 });
@@ -292,26 +296,69 @@ function scanFileLocally(fileName, content) {
     }
   }
 
-  const piiTypes = [...new Set(allPII.map((m) => m.label))];
-  const blocked = allPII.length >= 5;
+  // WASM으로 인젝션 검사 (줄 단위, 10자 이상만)
+  const textLines = lines
+    .map((t, i) => ({ text: t.trim(), line: i + 1 }))
+    .filter((l) => l.text.length > 10);
 
-  return {
-    fileName,
-    pii: {
-      found: allPII.length > 0,
-      count: allPII.length,
-      types: piiTypes,
-      details: allPII.slice(0, 20),
-    },
-    blocked,
-    summary: allPII.length > 0
-      ? `${piiTypes.join(', ')} ${allPII.length}건 감지`
-      : 'No PII detected',
-  };
+  let wasmChecked = 0;
+  let wasmDone = false;
+
+  if (textLines.length === 0) {
+    finalize();
+    return;
+  }
+
+  // 각 줄을 WASM으로 검사 (비동기)
+  for (const tl of textLines.slice(0, 30)) {
+    safeSendMessage({ type: 'ANALYZE_WASM', text: tl.text }, (response) => {
+      wasmChecked++;
+      if (response && response.status === 'success') {
+        const risk = (response.riskLevel || 'low').toLowerCase();
+        if (risk === 'high' || risk === 'critical' || response.blocked) {
+          injectionLines.push({ line: tl.line, text: tl.text.slice(0, 60), risk });
+        }
+      }
+      if (wasmChecked >= Math.min(textLines.length, 30) && !wasmDone) {
+        wasmDone = true;
+        finalize();
+      }
+    });
+  }
+
+  // 1초 타임아웃 (WASM 응답 느릴 때)
+  setTimeout(() => {
+    if (!wasmDone) {
+      wasmDone = true;
+      finalize();
+    }
+  }, 1000);
+
+  function finalize() {
+    const piiTypes = [...new Set(allPII.map((m) => m.label))];
+    // PII 1건 이상이면 차단
+    const piiBlocked = allPII.length >= 1;
+    const injBlocked = injectionLines.length > 0;
+    const blocked = piiBlocked || injBlocked;
+
+    const parts = [];
+    if (allPII.length > 0) parts.push(`PII: ${piiTypes.join(', ')} ${allPII.length}건`);
+    if (injectionLines.length > 0) parts.push(`Injection: ${injectionLines.length}줄 의심`);
+
+    wasmCallback({
+      fileName,
+      blocked,
+      piiCount: allPII.length,
+      injCount: injectionLines.length,
+      summary: parts.length > 0 ? parts.join(', ') : 'No threats',
+      injectionLines: injectionLines.slice(0, 5),
+    });
+  }
 }
 
 function interceptFileInputs() {
-  const observer = new MutationObserver((mutations) => {
+  // 1. 표준 <input type="file"> 감지
+  const fileInputObserver = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType !== 1) continue;
@@ -327,54 +374,80 @@ function interceptFileInputs() {
       }
     }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  fileInputObserver.observe(document.body, { childList: true, subtree: true });
 
+  // 기존 file input도 감지
   document.querySelectorAll('input[type="file"]').forEach((input) => {
     if (!input.dataset.pgIntercepted) {
       input.dataset.pgIntercepted = 'true';
       input.addEventListener('change', handleFileAttach, true);
     }
   });
+
+  // 2. ChatGPT 드래그앤드롭 감지
+  document.body.addEventListener('drop', handleFileDrop, true);
+
+  // 3. ChatGPT 클립보드 붙여넣기 감지
+  document.body.addEventListener('paste', handleFilePaste, true);
+}
+
+async function scanAndAlert(file, clearFn) {
+  if (!isScannableFile(file)) {
+    showAlert(`[FILE] ${file.name}\nBinary file - cannot scan`, 'info');
+    return;
+  }
+  if (file.size > 500000) {
+    showAlert(`[FILE] ${file.name}\nToo large (${(file.size / 1024).toFixed(0)}KB)`, 'warning');
+    return;
+  }
+
+  try {
+    showAlert(`[FILE] ${file.name}\nScanning...`, 'info');
+    const content = await readFileAsText(file);
+
+    scanFileLocally(file.name, content, (result) => {
+      if (result.blocked) {
+        const lines = result.injectionLines.length > 0
+          ? '\nInjection lines: ' + result.injectionLines.map(l => `L${l.line}: "${l.text}"`).join(', ')
+          : '';
+        showAlert(
+          `[FILE BLOCKED] ${file.name}\n${result.summary}${lines}\n(Scanned locally, nothing sent to server)`,
+          'danger',
+        );
+        if (clearFn) clearFn();
+      } else {
+        showAlert(`[FILE OK] ${file.name}\nNo threats (scanned locally)`, 'info');
+        setTimeout(hideAlert, 3000);
+      }
+    });
+  } catch (err) {
+    showAlert(`[FILE] ${file.name}\nRead error: ${err.message}`, 'warning');
+  }
 }
 
 async function handleFileAttach(event) {
   const input = event.target;
   if (!input.files || input.files.length === 0) return;
-
   for (const file of input.files) {
-    if (!isScannableFile(file)) {
-      showAlert(`[FILE] ${file.name}\nBinary file - cannot scan`, 'info');
-      continue;
-    }
-    if (file.size > 500000) {
-      showAlert(`[FILE] ${file.name}\nToo large (${(file.size / 1024).toFixed(0)}KB > 500KB)`, 'warning');
-      continue;
-    }
+    await scanAndAlert(file, () => { input.value = ''; });
+  }
+}
 
-    try {
-      showAlert(`[FILE] ${file.name}\nScanning locally...`, 'info');
-      const content = await readFileAsText(file);
+async function handleFileDrop(event) {
+  const files = event.dataTransfer?.files;
+  if (!files || files.length === 0) return;
+  for (const file of files) {
+    await scanAndAlert(file, null);
+  }
+}
 
-      // PII 검사는 브라우저에서 직접 수행 (서버 전송 없음)
-      const result = scanFileLocally(file.name, content);
-
-      if (result.blocked) {
-        showAlert(
-          `[FILE BLOCKED] ${file.name}\nPII: ${result.summary}\nToo many PII items - file attachment blocked\n(Scanned locally, nothing sent to server)`,
-          'danger',
-        );
-        input.value = '';
-      } else if (result.pii.found) {
-        showAlert(
-          `[FILE WARNING] ${file.name}\nPII: ${result.summary}\n(Scanned locally, nothing sent to server)`,
-          'warning',
-        );
-      } else {
-        showAlert(`[FILE OK] ${file.name}\nNo PII detected (scanned locally)`, 'info');
-        setTimeout(hideAlert, 3000);
-      }
-    } catch (err) {
-      showAlert(`[FILE] ${file.name}\nRead error: ${err.message}`, 'warning');
+async function handleFilePaste(event) {
+  const items = event.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.kind === 'file') {
+      const file = item.getAsFile();
+      if (file) await scanAndAlert(file, null);
     }
   }
 }
