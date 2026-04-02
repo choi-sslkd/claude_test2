@@ -480,7 +480,7 @@ document.body.addEventListener('keyup', (e) => {
   }, 400);
 });
 
-// ─── Enter: 서버 API + ML 최종 판정 ───
+// ─── Enter: WASM + 서버 ML 병렬 실행 ───
 document.body.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || e.shiftKey) return;
   const promptBox = findPromptBox();
@@ -493,38 +493,59 @@ document.body.addEventListener('keydown', (e) => {
   e.stopPropagation();
   e.stopImmediatePropagation();
 
-  // 중복 Enter 방지
   if (isAnalyzing) return;
   isAnalyzing = true;
-
-  showAlert('[ANALYZING...]\n서버에서 ML 분석 중...', 'info');
 
   const pii = scanPII(text);
   const textForServer = pii.hasPII ? pii.maskedText : text;
 
-  analyzeWithServer(textForServer, (result) => {
+  let wasmDone = false;
+  let serverDone = false;
+  let wasmResult = null;
+  let serverResult = null;
+  let alreadyDecided = false;
+
+  // 둘 중 하나라도 "차단"이면 즉시 차단 (먼저 끝나는 쪽)
+  function decide() {
+    if (alreadyDecided) return;
+
+    // WASM이 차단이면 서버 기다리지 않고 즉시 차단
+    if (wasmDone && wasmResult && wasmResult.blocked) {
+      alreadyDecided = true;
+      isAnalyzing = false;
+      showAlert(
+        `[BLOCKED / WASM]\n${wasmResult.text}\n(패턴 매칭으로 즉시 차단)`,
+        'danger',
+      );
+      clearPromptBox(promptBox);
+      setTimeout(hideAlert, 5000);
+      return;
+    }
+
+    // 서버가 차단이면 즉시 차단
+    if (serverDone && serverResult && serverResult.blocked) {
+      alreadyDecided = true;
+      isAnalyzing = false;
+      showAlert(serverResult.text, serverResult.alertType);
+      clearPromptBox(promptBox);
+      setTimeout(hideAlert, 5000);
+      return;
+    }
+
+    // 둘 다 끝나야 최종 판정
+    if (!wasmDone || !serverDone) return;
+
+    alreadyDecided = true;
     isAnalyzing = false;
 
-    if (!result && !pii.hasPII) {
-      hideAlert();
-      const sendBtn = document.querySelector('button[data-testid="send-button"]');
-      if (sendBtn) sendBtn.click();
-      return;
-    }
+    // 서버 결과 우선 (ML 점수 포함)
+    const finalResult = serverResult || wasmResult;
 
-    // 인젝션으로 차단 → 경고 3초 유지 후 사라짐
-    if (result && result.blocked) {
-      showAlert(result.text, result.alertType);
-      clearPromptBox(promptBox);
-      setTimeout(hideAlert, 5000);  // 5초간 경고 표시
-      return;
-    }
-
-    // PII 감지 → 마스킹 후 전송 (경고 3초 표시)
+    // PII 마스킹
     if (pii.hasPII) {
       replacePromptText(promptBox, pii.maskedText);
       showAlert(
-        `[PII MASKED]\n${pii.summary}\n원본 개인정보가 마스킹 처리되어 전송됩니다.\n(client-side, 원본은 서버에 전송되지 않음)`,
+        `[PII MASKED]\n${pii.summary}\n원본 개인정보가 마스킹 처리되어 전송됩니다.`,
         'warning',
       );
       setTimeout(() => {
@@ -535,12 +556,43 @@ document.body.addEventListener('keydown', (e) => {
       return;
     }
 
-    // MEDIUM 이하 → 경고 표시 + 전송 + 3초 후 사라짐
-    if (result) {
-      showAlert(result.text, result.alertType);
+    // 안전 → 전송
+    if (finalResult) {
+      showAlert(finalResult.text, finalResult.alertType);
       setTimeout(hideAlert, 3000);
     }
     const sendBtn = document.querySelector('button[data-testid="send-button"]');
     if (sendBtn) sendBtn.click();
+  }
+
+  // ─── WASM 병렬 실행 (즉시) ───
+  showAlert('[ANALYZING...]\nWASM 패턴 검사 + ML 분석 병렬 진행 중...', 'info');
+
+  analyzeWithWasm(text, (result) => {
+    wasmDone = true;
+    wasmResult = result;
+    if (result) {
+      // WASM 결과 먼저 표시 (서버 응답 전)
+      showAlert(`[WASM 1차 결과]\n${result.text}\nML 결과 대기 중...`, result.alertType);
+    }
+    decide();
   });
+
+  // ─── 서버 ML 병렬 실행 (50ms 후 응답) ───
+  analyzeWithServer(textForServer, (result) => {
+    serverDone = true;
+    serverResult = result;
+    decide();
+  });
+
+  // ─── 타임아웃: 서버가 3초 안에 안 오면 WASM 결과로 판정 ───
+  setTimeout(() => {
+    if (!serverDone) {
+      serverDone = true;
+      serverResult = null; // 서버 없으면 null
+      console.warn('[PG] Server timeout, using WASM result');
+      decide();
+    }
+  }, 3000);
+
 }, true);
