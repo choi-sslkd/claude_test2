@@ -2,38 +2,35 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Install OpenSSL for Prisma
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl && rm -rf /var/lib/apt/lists/*
 
-# Rule engine package - 먼저 복사 + 설치
+# 1. Rule engine 복사 + 설치
 COPY packages/rule-engine/ packages/rule-engine/
 RUN cd packages/rule-engine && npm install
 
-# API deps
-COPY apps/api/package.json apps/api/package-lock.json apps/api/
+# 2. API package.json만 복사 + 설치
+COPY apps/api/package.json apps/api/
 RUN cd apps/api && npm install --ignore-scripts
 
-# rule-engine을 직접 복사 (심볼릭 링크 대신)
-RUN rm -rf apps/api/node_modules/@prompt-guard/rule-engine && \
-    mkdir -p apps/api/node_modules/@prompt-guard && \
-    cp -r packages/rule-engine apps/api/node_modules/@prompt-guard/rule-engine
+# 3. API 소스 복사 (node_modules 제외는 .dockerignore에서 처리)
+COPY apps/api/src/ apps/api/src/
+COPY apps/api/prisma/ apps/api/prisma/
+COPY apps/api/tsconfig.json apps/api/tsconfig.json
+COPY apps/api/nest-cli.json apps/api/nest-cli.json 2>/dev/null || true
+COPY apps/api/jest.config.js apps/api/jest.config.js 2>/dev/null || true
 
-# API source + prisma
-COPY apps/api/ apps/api/
-
-# rule-engine 다시 복사 (COPY가 node_modules를 덮어쓸 수 있으므로)
+# 4. rule-engine을 node_modules에 복사 (가장 마지막에)
 RUN mkdir -p apps/api/node_modules/@prompt-guard && \
+    rm -rf apps/api/node_modules/@prompt-guard/rule-engine && \
     cp -r packages/rule-engine apps/api/node_modules/@prompt-guard/rule-engine
 
-# Generate Prisma client
+# 5. Prisma generate
 RUN cd apps/api && npx prisma generate --schema prisma/schema.prisma
 
-# Build NestJS
-RUN cd apps/api && npm run build
+# 6. NestJS build
+RUN cd apps/api && npx nest build
 
 EXPOSE 3000
-
 WORKDIR /app/apps/api
-
 CMD ["node", "dist/src/main"]
