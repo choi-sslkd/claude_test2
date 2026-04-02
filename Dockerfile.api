@@ -5,22 +5,22 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl && rm -rf /var/lib/apt/lists/*
 
-# 1. Rule engine 복사 + 설치
+# 1. Rule engine 복사 + 설치 + 빌드 (dist/ 생성)
 COPY packages/rule-engine/ packages/rule-engine/
-RUN cd packages/rule-engine && npm install
+RUN cd packages/rule-engine && npm install && npx tsc || true
 
 # 2. API package.json만 복사 + 설치
 COPY apps/api/package.json apps/api/
 RUN cd apps/api && npm install --ignore-scripts
 
-# 3. API 소스 복사 (개별 파일)
+# 3. API 소스 복사
 COPY apps/api/src/ apps/api/src/
 COPY apps/api/prisma/ apps/api/prisma/
 COPY apps/api/tsconfig.json apps/api/tsconfig.json
 COPY apps/api/jest.config.js apps/api/jest.config.js
 COPY apps/api/prisma.config.ts apps/api/prisma.config.ts
 
-# 4. rule-engine을 node_modules에 복사 (마지막)
+# 4. rule-engine을 node_modules에 복사 (dist/ 포함)
 RUN mkdir -p apps/api/node_modules/@prompt-guard && \
     rm -rf apps/api/node_modules/@prompt-guard/rule-engine && \
     cp -r packages/rule-engine apps/api/node_modules/@prompt-guard/rule-engine
