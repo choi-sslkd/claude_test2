@@ -272,8 +272,10 @@ function buildAlert(r, isSubmit) {
   const matchText = r.matches.length > 0
     ? r.matches.map((m) => `"${m.pattern || m.id}"`).join(', ') : '';
   const piiLine = r.pii?.hasPII ? `\nPII: ${r.pii.summary} (client-side, not sent to server)` : '';
-  const mlLine = (r.mlStatus && !r.mlStatus.available)
-    ? `\n⚠ ${r.mlStatus.message || 'ML 서버 장애. 패턴 매칭만 동작 중.'}`
+  // ML 응답에 점수가 있으면 정상 → 에러 메시지 안 보임
+  const mlHasScore = r.injPct && r.injPct !== 'N/A' && r.injPct !== '0.0%';
+  const mlLine = (!mlHasScore && r.mlStatus && !r.mlStatus.available)
+    ? '\n⚠ ML 서버 연결 실패. WASM 패턴 매칭만 실행 중.'
     : '';
 
   if (r.blocked || r.overallRisk === 'critical') {
@@ -301,7 +303,7 @@ function buildAlert(r, isSubmit) {
   }
   // note level
   if (mlLine) {
-    return { alertType: 'warning', text: `[DEGRADED MODE]${mlLine}` };
+    return { alertType: 'info', text: mlLine.trim() };
   }
   if (r.pii?.hasPII) {
     return { alertType: 'warning', text: `[PII DETECTED]\n${r.pii.summary}\n(client-side, not sent to server)` };
