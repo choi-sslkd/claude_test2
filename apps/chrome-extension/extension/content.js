@@ -2,78 +2,79 @@
 // PII 검사: 브라우저에서 직접 수행 (서버 전송 없음)
 // 인젝션 검사: 마스킹된 텍스트만 서버로 전송
 
-// ─── Alert UI (WASM 상단 + ML 하단, 2줄) ─────────────────────
+// ─── Alert UI (1개 박스에 WASM + ML 통합 표시) ─────────────────
 
-const alertContainer = document.createElement('div');
-alertContainer.style.cssText = `
-  position: fixed; top: 20px; right: 20px;
-  z-index: 2147483647; pointer-events: none;
-  display: flex; flex-direction: column; gap: 8px;
-  max-width: 500px;
-`;
-document.body.appendChild(alertContainer);
-
-// WASM 결과 박스 (상단)
-const wasmBox = document.createElement('div');
-wasmBox.style.cssText = `
-  padding: 12px 20px; color: white; font-weight: bold;
-  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  display: none; white-space: pre-wrap; font-size: 12px; line-height: 1.5;
-  border-left: 4px solid #722ed1;
-`;
-alertContainer.appendChild(wasmBox);
-
-// ML 결과 박스 (하단)
-const mlBox = document.createElement('div');
-mlBox.style.cssText = `
-  padding: 12px 20px; color: white; font-weight: bold;
-  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  display: none; white-space: pre-wrap; font-size: 12px; line-height: 1.5;
-  border-left: 4px solid #1677ff;
-`;
-alertContainer.appendChild(mlBox);
-
-// 기존 호환용 alertBox (파일 스캔 등에서 사용)
 const alertBox = document.createElement('div');
 alertBox.style.cssText = `
-  padding: 12px 20px; color: white; font-weight: bold;
+  position: fixed; top: 20px; right: 20px;
+  padding: 15px 25px; color: white; font-weight: bold;
   border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  display: none; white-space: pre-wrap; font-size: 12px; line-height: 1.5;
+  z-index: 2147483647; display: none; pointer-events: none;
+  max-width: 520px; line-height: 1.7; white-space: pre-wrap; font-size: 13px;
 `;
-alertContainer.appendChild(alertBox);
+document.body.appendChild(alertBox);
 
-function setBoxColor(box, type) {
-  if (type === 'danger') box.style.backgroundColor = '#ff4d4f';
-  else if (type === 'warning') box.style.backgroundColor = '#faad14';
-  else box.style.backgroundColor = '#1677ff';
+// WASM + ML 결과를 저장해두고 합쳐서 표시
+let currentWasm = '';
+let currentMl = '';
+
+function getHighestType(wasmType, mlType) {
+  const order = { danger: 3, warning: 2, info: 1 };
+  return (order[wasmType] || 0) >= (order[mlType] || 0) ? wasmType : mlType;
+}
+
+function updateCombinedAlert() {
+  if (!currentWasm && !currentMl) { alertBox.style.display = 'none'; return; }
+
+  let combined = '';
+  let highestType = 'info';
+
+  if (currentWasm) {
+    combined += `━ WASM 패턴 매칭 ━\n${currentWasm.text}`;
+    highestType = currentWasm.type || 'info';
+  }
+
+  if (currentMl) {
+    if (combined) combined += '\n\n';
+    combined += `━ ML 서버 분석 ━\n${currentMl.text}`;
+    highestType = getHighestType(highestType, currentMl.type || 'info');
+  }
+
+  alertBox.innerText = combined;
+  if (highestType === 'danger') alertBox.style.backgroundColor = '#ff4d4f';
+  else if (highestType === 'warning') alertBox.style.backgroundColor = '#faad14';
+  else alertBox.style.backgroundColor = '#1677ff';
+  alertBox.style.display = 'block';
 }
 
 function showWasmResult(message, type = 'info') {
-  wasmBox.innerText = '[WASM] ' + message;
-  setBoxColor(wasmBox, type);
-  wasmBox.style.display = 'block';
+  currentWasm = { text: message, type };
+  updateCombinedAlert();
 }
 
 function showMlResult(message, type = 'info') {
-  mlBox.innerText = '[ML] ' + message;
-  setBoxColor(mlBox, type);
-  mlBox.style.display = 'block';
+  currentMl = { text: message, type };
+  updateCombinedAlert();
 }
 
 function showAlert(message, type = 'danger') {
+  currentWasm = '';
+  currentMl = '';
   alertBox.innerText = message;
-  setBoxColor(alertBox, type);
+  if (type === 'danger') alertBox.style.backgroundColor = '#ff4d4f';
+  else if (type === 'warning') alertBox.style.backgroundColor = '#faad14';
+  else alertBox.style.backgroundColor = '#1677ff';
   alertBox.style.display = 'block';
 }
 
 function hideAlert() {
   alertBox.style.display = 'none';
-  wasmBox.style.display = 'none';
-  mlBox.style.display = 'none';
+  currentWasm = '';
+  currentMl = '';
 }
 
-function hideWasm() { wasmBox.style.display = 'none'; }
-function hideMl() { mlBox.style.display = 'none'; }
+function hideWasm() { currentWasm = ''; updateCombinedAlert(); }
+function hideMl() { currentMl = ''; updateCombinedAlert(); }
 
 // ─── Client-Side PII Detection (서버 전송 없음) ─────────────
 
