@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WeightCalculatorService } from '../weight-calculator/weight-calculator.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreateRuleDto } from './dto/create-rule.dto';
 import { UpdateRuleDto } from './dto/update-rule.dto';
 
@@ -9,6 +10,7 @@ export class RulesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly weightCalc: WeightCalculatorService,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   async findAll() {
@@ -26,10 +28,9 @@ export class RulesService {
   async create(dto: CreateRuleDto) {
     const category = dto.category ?? 'CUSTOM';
 
-    // Auto-calculate OWASP weights via ML API
     const weights = await this.weightCalc.calculate(dto.pattern, category);
 
-    return this.prisma.rule.create({
+    const rule = await this.prisma.rule.create({
       data: {
         pattern: dto.pattern,
         riskLevel: weights.riskLevel as any,
@@ -46,12 +47,19 @@ export class RulesService {
         mlAmbiguityScore: weights.mlAmbiguityScore,
       },
     });
+
+    // 감사 로그
+    this.auditLog.recordAdmin({
+      type: 'rule_create',
+      detail: `룰 생성: pattern="${dto.pattern}" category=${category} risk=${weights.riskLevel} owasp=${weights.owaspRiskScore}`,
+    });
+
+    return rule;
   }
 
   async update(id: string, dto: UpdateRuleDto) {
     await this.findOne(id);
 
-    // Recalculate weights if pattern or category changed
     let weightData = {};
     if (dto.pattern !== undefined || dto.category !== undefined) {
       const existing = await this.findOne(id);
@@ -72,7 +80,7 @@ export class RulesService {
       };
     }
 
-    return this.prisma.rule.update({
+    const rule = await this.prisma.rule.update({
       where: { id },
       data: {
         ...(dto.pattern !== undefined && { pattern: dto.pattern }),
@@ -81,18 +89,34 @@ export class RulesService {
         ...weightData,
       },
     });
+
+    // 감사 로그
+    this.auditLog.recordAdmin({
+      type: 'rule_update',
+      detail: `룰 수정: id=${id} ${dto.pattern ? 'pattern="' + dto.pattern + '"' : ''} ${dto.enabled !== undefined ? 'enabled=' + dto.enabled : ''}`,
+    });
+
+    return rule;
   }
 
   async remove(id: string) {
-    await this.findOne(id);
-    return this.prisma.rule.delete({ where: { id } });
+    const rule = await this.findOne(id);
+    await this.prisma.rule.delete({ where: { id } });
+
+    // 감사 로그
+    this.auditLog.recordAdmin({
+      type: 'rule_disable',
+      detail: `룰 삭제: id=${id} pattern="${rule.pattern}"`,
+    });
+
+    return rule;
   }
 
   async recalculateWeights(id: string) {
     const rule = await this.findOne(id);
     const weights = await this.weightCalc.calculate(rule.pattern, rule.category);
 
-    return this.prisma.rule.update({
+    const updated = await this.prisma.rule.update({
       where: { id },
       data: {
         riskLevel: weights.riskLevel as any,
@@ -106,6 +130,14 @@ export class RulesService {
         mlAmbiguityScore: weights.mlAmbiguityScore,
       },
     });
+
+    // 감사 로그
+    this.auditLog.recordAdmin({
+      type: 'rule_update',
+      detail: `가중치 재계산: id=${id} owasp=${weights.owaspRiskScore} inj=${weights.injectionWeight}`,
+    });
+
+    return updated;
   }
 
   async findActiveRules() {
