@@ -69,9 +69,9 @@ async function instantiateWasm(module, imports = {}) {
 let wasmModule = null;
 let analyzePrompt = null;
 
-const RULES_API_URL = 'http://localhost:3000/admin/rules/active';
-const SCORE_API_URL = 'http://localhost:3000/api/v1/score';
-const FILE_SCAN_API_URL = 'http://localhost:3000/api/v1/scan-file';
+const RULES_API_URL = 'http://34.64.235.245:3000/admin/rules/active';
+const SCORE_API_URL = 'http://34.64.235.245:3000/api/v1/score';
+const FILE_SCAN_API_URL = 'http://34.64.235.245:3000/api/v1/scan-file';
 const RULES_REFRESH_MS = 60 * 1000;
 
 let activeRules = [];

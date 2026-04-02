@@ -16,8 +16,12 @@ COPY src/ src/
 COPY scripts/ scripts/
 COPY pyproject.toml .
 
-# models/ is mounted as volume or copied in
-# If no models exist, they must be trained first
+# 데이터 + 기존 학습 모델 복사
+COPY data/ data/
+COPY models/ models/
+
+# 모델이 없으면 학습 실행
+RUN if [ ! -d "models/injection/knn" ]; then python scripts/setup_ml.py; fi
 
 EXPOSE 8001
 

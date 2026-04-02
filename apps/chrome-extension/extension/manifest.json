@@ -16,7 +16,7 @@
     }
   ],
   "host_permissions": [
-    "http://localhost:3000/*"
+    "http://34.64.235.245:3000/*"
   ],
   "web_accessible_resources": [
     {

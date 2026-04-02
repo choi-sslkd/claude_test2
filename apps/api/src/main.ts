@@ -26,10 +26,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new LoggingInterceptor());
 
   app.enableCors({
-    origin: [
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-    ],
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key'],
