@@ -1,6 +1,5 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { randomUUID, randomBytes } from 'crypto';
+import { JwtService } from '@nestjs/jwt';
 import { AdminLoginDto } from './dto/admin-login.dto';
 
 @Injectable()
@@ -11,20 +10,27 @@ export class AdminAuthService {
   private readonly adminEmail = 'admin@promptguard.com';
   private readonly adminPassword = 'admin1234';
 
+  constructor(private readonly jwtService: JwtService) {}
+
   async login(dto: AdminLoginDto) {
     if (dto.email !== this.adminEmail || dto.password !== this.adminPassword) {
-      // 실패 로깅 (브루트포스 탐지용)
-      this.logger.warn(
-        `[AUTH FAILED] email="${dto.email}" ip=unknown reason=invalid_credentials`,
-      );
+      this.logger.warn(`[AUTH FAILED] email="${dto.email}"`);
       throw new UnauthorizedException('관리자 계정 정보가 올바르지 않습니다.');
     }
 
-    // 성공 로깅
     this.logger.log(`[AUTH SUCCESS] email="${dto.email}"`);
 
+    const payload = {
+      sub: 'admin-1',
+      email: this.adminEmail,
+      role: 'admin',
+    };
+
+    const accessToken = this.jwtService.sign(payload);
+
     return {
-      accessToken: randomBytes(32).toString('base64url'),  // 보안 랜덤 토큰
+      accessToken,
+      expiresIn: 600,  // 10분 (초)
       user: {
         id: 'admin-1',
         email: this.adminEmail,

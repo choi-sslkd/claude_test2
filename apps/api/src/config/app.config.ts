@@ -19,6 +19,7 @@ export default registerAs('app', () => ({
   // Python ML API URL
   mlApiUrl: process.env.ML_API_URL ?? 'http://localhost:8001',
   mlApiKey: process.env.ML_API_KEY ?? 'ml-internal-key',
+  jwtSecret: process.env.JWT_SECRET ?? 'promptguard-jwt-secret-change-in-production',
 
   // 환경
   nodeEnv: process.env.NODE_ENV ?? 'development',

@@ -33,10 +33,9 @@ type RuleForm = {
 };
 
 const API_BASE_URL = 'http://localhost:3000';
-const ADMIN_KEY = 'dev-admin-key';
-
 function adminHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  return { 'x-admin-key': ADMIN_KEY, ...extra };
+  const token = localStorage.getItem('admin_access_token');
+  return token ? { Authorization: `Bearer ${token}`, ...extra } : extra;
 }
 
 const CATEGORIES: Category[] = [

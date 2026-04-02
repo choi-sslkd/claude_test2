@@ -10,12 +10,9 @@ import { AnalyzeModule } from './modules/analyze/analyze.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { ScoringModule } from './modules/scoring/scoring.module';
 import { FileScanModule } from './modules/file-scan/file-scan.module';
+import { AdminAuthModule } from './modules/admin-auth/admin-auth.module';
 
 import { HealthController } from './modules/health/health.controller';
-
-import { AdminGuard } from './common/guards/admin.guard';
-import { AdminAuthController } from './modules/admin-auth/admin-auth.controller';
-import { AdminAuthService } from './modules/admin-auth/admin-auth.service';
 
 @Module({
   imports: [
@@ -23,7 +20,6 @@ import { AdminAuthService } from './modules/admin-auth/admin-auth.service';
       isGlobal: true,
       load: [appConfig],
     }),
-    // Rate limiting: 1분에 60회 (로그인은 컨트롤러에서 별도 제한)
     ThrottlerModule.forRoot([{
       ttl: 60000,
       limit: 60,
@@ -34,15 +30,12 @@ import { AdminAuthService } from './modules/admin-auth/admin-auth.service';
     AnalyzeModule,
     ScoringModule,
     FileScanModule,
+    AdminAuthModule,
   ],
   controllers: [
     HealthController,
-    AdminAuthController,
   ],
   providers: [
-    AdminGuard,
-    AdminAuthService,
-    // 글로벌 Rate Limiting 적용
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

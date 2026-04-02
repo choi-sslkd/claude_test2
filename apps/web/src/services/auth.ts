@@ -16,6 +16,7 @@ export interface AdminUser {
 
 export interface AdminLoginResponse {
   accessToken: string;
+  expiresIn: number;
   user: AdminUser;
 }
 
@@ -25,4 +26,15 @@ export async function adminLogin(data: AdminLoginRequest): Promise<AdminLoginRes
     data
   );
   return response.data;
+}
+
+/** JWT 토큰을 포함한 헤더 생성 */
+export function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('admin_access_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/** JWT + Content-Type 헤더 */
+export function authJsonHeaders(): Record<string, string> {
+  return { ...authHeaders(), 'Content-Type': 'application/json' };
 }
