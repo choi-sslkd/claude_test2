@@ -34,8 +34,8 @@ export class MlClientService {
     private readonly http: HttpService,
     private readonly config: ConfigService,
   ) {
-    this.baseUrl = this.config.get<string>('mlApiUrl') ?? 'http://localhost:8001';
-    this.mlApiKey = this.config.get<string>('app.mlApiKey') ?? 'ml-internal-key';
+    this.baseUrl = process.env.ML_API_URL || this.config.get<string>('app.mlApiUrl') || 'http://localhost:8001';
+    this.mlApiKey = process.env.ML_API_KEY || this.config.get<string>('app.mlApiKey') || 'ml-internal-key';
   }
 
   /** ML 서버가 현재 사용 가능한지 */
