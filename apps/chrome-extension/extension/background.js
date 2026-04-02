@@ -1,6 +1,7 @@
 // extension/background.js
 
 // --- Inlined from build/release.js (import not allowed in service worker) ---
+// Rebuilt with AssemblyScript 0.27.24
 async function instantiateWasm(module, imports = {}) {
   const adaptedImports = {
     env: Object.assign(Object.create(globalThis), imports.env || {}, {
@@ -16,9 +17,15 @@ async function instantiateWasm(module, imports = {}) {
   const { exports } = await WebAssembly.instantiate(module, adaptedImports);
   const memory = exports.memory || imports.env.memory;
   const adaptedExports = Object.setPrototypeOf({
-    analyzePrompt(prompt) {
-      prompt = __lowerString(prompt) || __notnull();
-      return exports.analyzePrompt(prompt);
+    analyzePrompt(prompt, dynamicRulesJson) {
+      prompt = __retain(__lowerString(prompt) || __notnull());
+      dynamicRulesJson = __lowerString(dynamicRulesJson) || __notnull();
+      try {
+        exports.__setArgumentsLength(arguments.length);
+        return __liftString(exports.analyzePrompt(prompt, dynamicRulesJson) >>> 0);
+      } finally {
+        __release(prompt);
+      }
     },
   }, exports);
   function __liftString(pointer) {
@@ -36,6 +43,23 @@ async function instantiateWasm(module, imports = {}) {
     const memoryU16 = new Uint16Array(memory.buffer);
     for (let i = 0; i < length; ++i) memoryU16[(pointer >>> 1) + i] = value.charCodeAt(i);
     return pointer;
+  }
+  const refcounts = new Map();
+  function __retain(pointer) {
+    if (pointer) {
+      const refcount = refcounts.get(pointer);
+      if (refcount) refcounts.set(pointer, refcount + 1);
+      else refcounts.set(exports.__pin(pointer), 1);
+    }
+    return pointer;
+  }
+  function __release(pointer) {
+    if (pointer) {
+      const refcount = refcounts.get(pointer);
+      if (refcount === 1) exports.__unpin(pointer), refcounts.delete(pointer);
+      else if (refcount) refcounts.set(pointer, refcount - 1);
+      else throw Error(`invalid refcount '${refcount}' for reference '${pointer}'`);
+    }
   }
   function __notnull() { throw TypeError("value must not be null"); }
   return adaptedExports;

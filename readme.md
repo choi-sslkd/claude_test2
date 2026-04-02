@@ -165,7 +165,7 @@ promptguard-v2/
 ```bash
 git clone https://github.com/choi-sslkd/claude_test2.git
 cd claude_test2
-git checkout develop_v5
+git checkout develop_v14
 ```
 
 ### Step 2. Node.js 의존성 설치
@@ -175,7 +175,42 @@ npm install
 cd packages/rule-engine && npm install && cd ../..
 cd apps/api && npm install && cd ../..
 cd apps/web && npm install && cd ../..
+cd apps/chrome-extension && npm install && cd ../..
 ```
+
+### Step 2.5. WASM 빌드 (AssemblyScript)
+
+```bash
+cd apps/chrome-extension
+npm run build
+cd ../..
+```
+
+이 명령은 `assembly/` 폴더의 AssemblyScript 소스를 컴파일해서 `extension/build/release.wasm`을 생성합니다.
+
+**빌드 결과:**
+```
+apps/chrome-extension/extension/build/
+├── release.wasm    ← WASM 바이너리 (패턴 매칭 엔진)
+├── release.js      ← JS 바인딩 (WASM 호출용)
+└── release.d.ts    ← TypeScript 타입 정의
+```
+
+**WASM 소스 구조:**
+```
+apps/chrome-extension/assembly/
+├── index.ts              ← 진입점 (analyzePrompt 함수 export)
+├── rule-engine.ts        ← WASM 룰 엔진 (패턴 매칭 + 점수 계산)
+├── text.normalizer.ts    ← 텍스트 정규화
+├── risk.scorer.ts        ← 위험도 계산
+├── tsconfig.json         ← AssemblyScript 설정
+└── rules/
+    ├── base.rule.ts      ← 기본 룰 클래스
+    ├── prompt-injection.rule.ts
+    └── puzzle-attack.rule.ts
+```
+
+> **참고:** WASM은 타이핑 중 로컬 패턴 매칭에 사용됩니다. 서버 없이 브라우저에서 즉시 동작합니다.
 
 ### Step 3. Python 의존성 설치
 
